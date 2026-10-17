@@ -21,6 +21,8 @@ export interface SendMessageOptions {
   topP?: number;
   providerId?: string;
   modelId?: string;
+  messageId?: string;
+  userMessageId?: string;
 }
 
 export class ChatEngine {
@@ -54,7 +56,12 @@ export class ChatEngine {
     return false;
   }
 
-  public async executeChat(options: SendMessageOptions): Promise<void> {
+  public async executeChat(options: SendMessageOptions): Promise<{
+    assistantMsgId: string;
+    fullText: string;
+    status: string;
+    errorMessage?: string;
+  }> {
     const { conversationId, content, attachments } = options;
     const win = this.getMainWindow();
 
@@ -107,7 +114,7 @@ export class ChatEngine {
     }
 
     // 2. Persist User Message
-    const userMsgId = crypto.randomUUID();
+    const userMsgId = options.userMessageId || crypto.randomUUID();
     const userMsg: ChatMessage = {
       id: userMsgId,
       conversationId,
@@ -121,7 +128,7 @@ export class ChatEngine {
     this.db.saveMessage(userMsg);
 
     // 3. Prepare Assistant Message Placeholder
-    const assistantMsgId = crypto.randomUUID();
+    const assistantMsgId = options.messageId || crypto.randomUUID();
     const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       conversationId,
@@ -156,6 +163,8 @@ export class ChatEngine {
     let attempt = 0;
     let success = false;
     let lastError: any = null;
+    let finalFullText = '';
+    let finalStatus = 'completed';
 
     while (attempt <= maxRetries && !success) {
       if (controller.signal.aborted) break;
@@ -185,11 +194,13 @@ export class ChatEngine {
               },
               onEnd: (fullText, tokenUsage, finishReason) => {
                 const latencyMs = Date.now() - startTime;
-                const finalStatus = finishReason === 'cancelled' ? 'stopped' : 'completed';
+                const status = finishReason === 'cancelled' ? 'stopped' : 'completed';
+                finalFullText = fullText;
+                finalStatus = status;
 
                 this.db.updateMessage(assistantMsgId, {
                   content: fullText,
-                  status: finalStatus,
+                  status,
                   tokenUsage,
                   latencyMs,
                   updatedAt: Date.now(),
@@ -234,6 +245,9 @@ export class ChatEngine {
           );
 
           const latencyMs = Date.now() - startTime;
+          finalFullText = resp.content;
+          finalStatus = 'completed';
+
           this.db.updateMessage(assistantMsgId, {
             content: resp.content,
             status: 'completed',
@@ -309,5 +323,12 @@ export class ChatEngine {
         });
       }
     }
+
+    return {
+      assistantMsgId,
+      fullText: finalFullText,
+      status: success ? finalStatus : 'error',
+      errorMessage: success ? undefined : (lastError?.message || 'Chat execution failed'),
+    };
   }
 }

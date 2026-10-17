@@ -9,7 +9,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultMaxTokens: 4096,
   sendOnEnter: true,
   localPdfOcrFallback: false,
-  contextWarningLimit: 32000,
+  contextWarningLimit: 200000,
 };
 
 export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [
@@ -22,6 +22,26 @@ export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [
     authMethod: 'bearer',
     streamingEnabled: true,
     defaultModel: 'gpt-4o',
+  },
+  {
+    name: 'OpenRouter (1M+ Models)',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    chatEndpoint: '/chat/completions',
+    modelListUrl: 'https://openrouter.ai/api/v1/models',
+    protocol: 'openai-chat',
+    authMethod: 'bearer',
+    streamingEnabled: true,
+    defaultModel: 'google/gemini-2.5-flash',
+  },
+  {
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    chatEndpoint: '/chat/completions',
+    modelListUrl: 'https://api.deepseek.com/models',
+    protocol: 'openai-chat',
+    authMethod: 'bearer',
+    streamingEnabled: true,
+    defaultModel: 'deepseek-chat',
   },
   {
     name: 'Groq Cloud',
@@ -42,16 +62,6 @@ export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [
     authMethod: 'none',
     streamingEnabled: true,
     defaultModel: 'llama3:latest',
-  },
-  {
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    chatEndpoint: '/chat/completions',
-    modelListUrl: 'https://openrouter.ai/api/v1/models',
-    protocol: 'openai-chat',
-    authMethod: 'bearer',
-    streamingEnabled: true,
-    defaultModel: 'anthropic/claude-3.5-sonnet',
   },
   {
     name: 'LM Studio (Local)',

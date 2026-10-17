@@ -65,34 +65,90 @@ export const useChatStore = create<ChatState>((set, get) => ({
     window.electronAPI.onStreamChunk((data: StreamChunkEvent) => {
       const { conversationId, messageId, fullText } = data;
       if (conversationId === get().activeConversationId) {
-        set((state) => ({
-          isStreaming: true,
-          streamingMessageId: messageId,
-          messages: state.messages.map((m) =>
-            m.id === messageId ? { ...m, content: fullText, status: 'streaming' } : m
-          ),
-        }));
+        set((state) => {
+          const hasTarget = state.messages.some((m) => m.id === messageId);
+          if (hasTarget) {
+            return {
+              isStreaming: true,
+              streamingMessageId: messageId,
+              messages: state.messages.map((m) =>
+                m.id === messageId ? { ...m, content: fullText, status: 'streaming' } : m
+              ),
+            };
+          }
+          // Fallback: match the active streaming assistant message
+          const lastIdx = state.messages.findLastIndex(
+            (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+          );
+          if (lastIdx !== -1) {
+            const next = [...state.messages];
+            next[lastIdx] = {
+              ...next[lastIdx],
+              id: messageId,
+              content: fullText,
+              status: 'streaming',
+            };
+            return {
+              isStreaming: true,
+              streamingMessageId: messageId,
+              messages: next,
+            };
+          }
+          return {
+            isStreaming: true,
+            streamingMessageId: messageId,
+          };
+        });
       }
     });
 
     window.electronAPI.onStreamEnd((data: StreamEndEvent) => {
       const { conversationId, messageId, fullText, tokenUsage, latencyMs, finishReason } = data;
       if (conversationId === get().activeConversationId) {
-        set((state) => ({
-          isStreaming: false,
-          streamingMessageId: null,
-          messages: state.messages.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  content: fullText,
-                  status: finishReason === 'cancelled' ? 'stopped' : 'completed',
-                  tokenUsage,
-                  latencyMs,
-                }
-              : m
-          ),
-        }));
+        set((state) => {
+          const finalStatus = finishReason === 'cancelled' ? 'stopped' : 'completed';
+          const hasTarget = state.messages.some((m) => m.id === messageId);
+          if (hasTarget) {
+            return {
+              isStreaming: false,
+              streamingMessageId: null,
+              messages: state.messages.map((m) =>
+                m.id === messageId
+                  ? {
+                      ...m,
+                      content: fullText,
+                      status: finalStatus,
+                      tokenUsage,
+                      latencyMs,
+                    }
+                  : m
+              ),
+            };
+          }
+          const lastIdx = state.messages.findLastIndex(
+            (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+          );
+          if (lastIdx !== -1) {
+            const next = [...state.messages];
+            next[lastIdx] = {
+              ...next[lastIdx],
+              id: messageId,
+              content: fullText,
+              status: finalStatus,
+              tokenUsage,
+              latencyMs,
+            };
+            return {
+              isStreaming: false,
+              streamingMessageId: null,
+              messages: next,
+            };
+          }
+          return {
+            isStreaming: false,
+            streamingMessageId: null,
+          };
+        });
       }
       // Reload conversations to update timestamps
       window.electronAPI.getConversations().then((updated) => set({ conversations: updated }));
@@ -101,13 +157,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     window.electronAPI.onStreamError((data: StreamErrorEvent) => {
       const { conversationId, messageId, error } = data;
       if (conversationId === get().activeConversationId) {
-        set((state) => ({
-          isStreaming: false,
-          streamingMessageId: null,
-          messages: state.messages.map((m) =>
-            m.id === messageId ? { ...m, status: 'error', errorMessage: error } : m
-          ),
-        }));
+        set((state) => {
+          const hasTarget = state.messages.some((m) => m.id === messageId);
+          if (hasTarget) {
+            return {
+              isStreaming: false,
+              streamingMessageId: null,
+              messages: state.messages.map((m) =>
+                m.id === messageId ? { ...m, status: 'error', errorMessage: error } : m
+              ),
+            };
+          }
+          const lastIdx = state.messages.findLastIndex(
+            (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+          );
+          if (lastIdx !== -1) {
+            const next = [...state.messages];
+            next[lastIdx] = {
+              ...next[lastIdx],
+              id: messageId,
+              status: 'error',
+              errorMessage: error,
+            };
+            return {
+              isStreaming: false,
+              streamingMessageId: null,
+              messages: next,
+            };
+          }
+          return {
+            isStreaming: false,
+            streamingMessageId: null,
+          };
+        });
       }
     });
   },
@@ -137,7 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const activeProv = provStore.activeProvider || provStore.providers[0];
 
     const pId = providerId || activeProv?.id || '';
-    const mId = modelId || activeProv?.defaultModel || '';
+    const mId = modelId || activeProv?.defaultModel || provStore.models[0]?.id || 'default';
 
     const newConv: Conversation = {
       id: crypto.randomUUID(),
@@ -234,7 +316,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     try {
-      await window.electronAPI.sendMessage({
+      const res = await window.electronAPI.sendMessage({
         conversationId: convId,
         content,
         attachments: tempUserMsg.attachments,
@@ -244,7 +326,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         topP: currentConv?.topP,
         providerId,
         modelId,
+        messageId: tempAssistantMsg.id,
+        userMessageId: tempUserMsg.id,
       });
+
+      // Synchronize fresh messages directly from the database to present full output all at once
+      const dbMsgs = await window.electronAPI.getMessages(convId);
+      if (dbMsgs && dbMsgs.length > 0) {
+        set({
+          messages: dbMsgs,
+          isStreaming: false,
+          streamingMessageId: null,
+        });
+      } else if (res && res.fullText) {
+        set((state) => ({
+          isStreaming: false,
+          streamingMessageId: null,
+          messages: state.messages.map((m) =>
+            m.id === tempAssistantMsg.id
+              ? { ...m, content: res.fullText, status: res.status || 'completed' }
+              : m
+          ),
+        }));
+      } else {
+        set({
+          isStreaming: false,
+          streamingMessageId: null,
+        });
+      }
+
+      // Update conversations list to sync any automatic title/timestamp updates
+      const updatedConvs = await window.electronAPI.getConversations();
+      set({ conversations: updatedConvs });
     } catch (err: any) {
       set((state) => ({
         isStreaming: false,

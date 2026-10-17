@@ -9,3 +9,4 @@ release/
 universal-llm.sqlite*
 .DS_Store
 Thumbs.db
+.agents

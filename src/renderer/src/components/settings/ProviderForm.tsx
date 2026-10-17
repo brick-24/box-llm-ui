@@ -146,12 +146,12 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 text-xs text-zinc-300">
+    <form onSubmit={handleSubmit} className="space-y-6 text-xs text-foreground">
       {/* Top Presets Selector */}
-      <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800 flex items-center justify-between">
+      <div className="p-3 bg-secondary/40 rounded-lg border border-border flex items-center justify-between gap-3">
         <div className="flex items-center space-x-2">
-          <Sparkles className="w-4 h-4 text-violet-400" />
-          <span className="font-semibold text-zinc-200">Load Preset Template:</span>
+          <Sparkles className="w-3.5 h-3.5 text-foreground" />
+          <span className="font-semibold text-foreground text-xs">Load Preset:</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {PROVIDER_PRESETS.map((p) => (
@@ -159,7 +159,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               key={p.name}
               type="button"
               onClick={() => applyPreset(p.name!)}
-              className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors"
+              className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-xs font-medium border border-border transition-colors"
             >
               {p.name}
             </button>
@@ -169,29 +169,29 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
       {/* Basic Settings */}
       <div className="space-y-3">
-        <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+        <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
           Basic Configuration
         </h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">Provider Display Name *</label>
+            <label className="block mb-1.5 font-medium text-foreground">Provider Display Name *</label>
             <input
               type="text"
               required
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="e.g. OpenAI / Groq / Local Ollama"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             />
           </div>
 
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">API Protocol Format *</label>
+            <label className="block mb-1.5 font-medium text-foreground">API Protocol Format *</label>
             <select
               value={form.protocol}
               onChange={(e) => setForm({ ...form, protocol: e.target.value as ApiProtocol })}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             >
               <option value="openai-chat">OpenAI-compatible Chat Completions</option>
               <option value="openai-responses">OpenAI Responses API</option>
@@ -202,26 +202,26 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">Base API URL *</label>
+            <label className="block mb-1.5 font-medium text-foreground">Base API URL *</label>
             <input
               type="text"
               required
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
               placeholder="https://api.openai.com/v1 or http://localhost:11434/v1"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500 font-mono text-[11px]"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
             />
           </div>
 
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">Chat Endpoint Path *</label>
+            <label className="block mb-1.5 font-medium text-foreground">Chat Endpoint Path *</label>
             <input
               type="text"
               required
               value={form.chatEndpoint}
               onChange={(e) => setForm({ ...form, chatEndpoint: e.target.value })}
               placeholder="/chat/completions or full URL"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500 font-mono text-[11px]"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
             />
           </div>
         </div>
@@ -229,17 +229,17 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
       {/* Authentication */}
       <div className="space-y-3">
-        <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+        <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
           Authentication
         </h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">Auth Method</label>
+            <label className="block mb-1.5 font-medium text-foreground">Auth Method</label>
             <select
               value={form.authMethod}
               onChange={(e) => setForm({ ...form, authMethod: e.target.value as AuthMethod })}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             >
               <option value="bearer">Bearer Token (Authorization: Bearer &lt;key&gt;)</option>
               <option value="api-key-header">API Key Header (api-key / x-api-key)</option>
@@ -250,19 +250,20 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           </div>
 
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">API Key / Secret</label>
+            <label className="block mb-1.5 font-medium text-foreground">API Key / Secret</label>
             <div className="relative">
               <input
                 type={showKey ? 'text' : 'password'}
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
                 placeholder="sk-..."
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-3 pr-9 py-2 text-zinc-100 outline-none focus:border-violet-500 font-mono text-[11px]"
+                className="w-full bg-card border border-border rounded-md pl-3 pr-9 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
               />
               <button
                 type="button"
                 onClick={() => setShowKey(!showKey)}
-                className="absolute right-2.5 top-2.5 text-zinc-400 hover:text-zinc-200"
+                className="absolute right-2.5 top-2 text-muted-foreground hover:text-foreground"
+                aria-label="Toggle Password Visibility"
               >
                 {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
@@ -273,30 +274,30 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
       {/* Model Discovery */}
       <div className="space-y-3">
-        <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+        <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">
           Model Discovery
         </h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="sm:col-span-2">
-            <label className="block mb-1 font-medium text-zinc-300">Model-List URL Endpoint</label>
+            <label className="block mb-1.5 font-medium text-foreground">Model-List URL Endpoint</label>
             <input
               type="text"
               value={form.modelListUrl}
               onChange={(e) => setForm({ ...form, modelListUrl: e.target.value })}
               placeholder="/models or full URL"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500 font-mono text-[11px]"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
             />
           </div>
 
           <div>
-            <label className="block mb-1 font-medium text-zinc-300">Default Model</label>
+            <label className="block mb-1.5 font-medium text-foreground">Default Model</label>
             <input
               type="text"
               value={form.defaultModel}
               onChange={(e) => setForm({ ...form, defaultModel: e.target.value })}
               placeholder="e.g. gpt-4o or llama3"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 outline-none focus:border-violet-500 font-mono text-[11px]"
+              className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
             />
           </div>
         </div>
@@ -307,12 +308,12 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             type="button"
             onClick={handleFetchModels}
             disabled={isFetchingModels}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground font-medium border border-border transition-colors text-xs"
           >
             {isFetchingModels ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground" />
             ) : (
-              <Download className="w-3.5 h-3.5 text-violet-400" />
+              <Download className="w-3.5 h-3.5" />
             )}
             <span>Fetch Models</span>
           </button>
@@ -321,12 +322,12 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             type="button"
             onClick={handleTest}
             disabled={isTesting}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition-colors"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground font-medium border border-border transition-colors text-xs"
           >
             {isTesting ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground" />
             ) : (
-              <Activity className="w-3.5 h-3.5 text-emerald-400" />
+              <Activity className="w-3.5 h-3.5 text-emerald-500" />
             )}
             <span>Test Connection</span>
           </button>
@@ -335,21 +336,21 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         {/* Test Result Feedback */}
         {testResult && (
           <div
-            className={`p-3 rounded-xl border text-xs flex items-start space-x-2.5 ${
+            className={`p-3 rounded-lg border text-xs flex items-start space-x-2.5 ${
               testResult.success
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                : 'bg-red-500/10 border-red-500/30 text-red-300'
+                ? 'bg-secondary/40 border-border text-foreground'
+                : 'bg-destructive/10 border-destructive/20 text-destructive'
             }`}
           >
             {testResult.success ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
             )}
             <div>
               <p className="font-semibold">{testResult.message}</p>
               {testResult.latencyMs > 0 && (
-                <p className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                   Latency: {testResult.latencyMs}ms
                 </p>
               )}
@@ -359,11 +360,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
         {/* Discovered models quick chips */}
         {discoveredModels.length > 0 && (
-          <div className="p-2.5 bg-zinc-900 rounded-xl border border-zinc-800">
-            <span className="text-[10px] text-zinc-400 block mb-1.5 font-semibold">
+          <div className="p-3 bg-secondary/30 rounded-lg border border-border">
+            <span className="text-[10px] text-muted-foreground block mb-1.5 font-semibold uppercase tracking-wider">
               Discovered Models ({discoveredModels.length}): Click to select as default
             </span>
-            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto">
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
               {discoveredModels.map((m) => (
                 <button
                   key={m}
@@ -371,8 +372,8 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                   onClick={() => setForm({ ...form, defaultModel: m })}
                   className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
                     form.defaultModel === m
-                      ? 'bg-violet-600 text-white font-semibold'
-                      : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                      ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                      : 'bg-secondary text-secondary-foreground hover:bg-accent border border-border'
                   }`}
                 >
                   {m}
@@ -384,52 +385,52 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       </div>
 
       {/* Advanced Toggle */}
-      <div className="pt-2 border-t border-zinc-800">
+      <div className="pt-2 border-t border-border">
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center space-x-1.5 text-xs text-zinc-400 hover:text-zinc-200 font-semibold"
+          className="flex items-center space-x-1.5 text-xs text-muted-foreground hover:text-foreground font-medium"
         >
           {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           <span>Advanced Configuration (Headers, Body, Organization, Custom JSON Mapping)</span>
         </button>
 
         {showAdvanced && (
-          <div className="mt-4 space-y-4 pl-2 border-l-2 border-zinc-800 animate-in fade-in duration-200">
+          <div className="mt-4 space-y-4 pl-3 border-l border-border animate-in fade-in duration-150">
             {/* Headers Editor */}
             <div>
-              <label className="block mb-1 font-semibold text-zinc-300">Custom HTTP Headers</label>
+              <label className="block mb-1.5 font-medium text-foreground">Custom HTTP Headers</label>
               <div className="flex items-center space-x-2 mb-2">
                 <input
                   type="text"
                   placeholder="Header Name (e.g. X-Custom-Auth)"
                   value={headerKey}
                   onChange={(e) => setHeaderKey(e.target.value)}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 font-mono text-[11px]"
+                  className="flex-1 bg-card border border-border rounded-md px-2.5 py-1 text-foreground font-mono text-[11px]"
                 />
                 <input
                   type="text"
                   placeholder="Value"
                   value={headerVal}
                   onChange={(e) => setHeaderVal(e.target.value)}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 font-mono text-[11px]"
+                  className="flex-1 bg-card border border-border rounded-md px-2.5 py-1 text-foreground font-mono text-[11px]"
                 />
                 <button
                   type="button"
                   onClick={handleAddHeader}
-                  className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                  className="p-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground border border-border"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               {Object.entries(form.customHeaders).map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between py-1 px-2 rounded bg-zinc-900/60 mb-1">
-                  <span className="font-mono text-violet-400">{k}: <span className="text-zinc-300">{v}</span></span>
+                <div key={k} className="flex items-center justify-between py-1 px-2.5 rounded-md bg-secondary/40 border border-border mb-1">
+                  <span className="font-mono text-foreground">{k}: <span className="text-muted-foreground">{v}</span></span>
                   <button
                     type="button"
                     onClick={() => handleRemoveHeader(k)}
-                    className="text-zinc-500 hover:text-red-400"
+                    className="text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -439,45 +440,45 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
             {/* Custom Request Body JSON */}
             <div>
-              <label className="block mb-1 font-semibold text-zinc-300">Custom Request Body (JSON)</label>
+              <label className="block mb-1.5 font-medium text-foreground">Custom Request Body (JSON)</label>
               <textarea
                 rows={3}
                 value={bodyJson}
                 onChange={(e) => handleBodyJsonChange(e.target.value)}
                 placeholder='{ "custom_param": "value" }'
-                className="w-full bg-zinc-900 border border-zinc-800 rounded p-2.5 font-mono text-[11px] text-zinc-200 outline-none"
+                className="w-full bg-card border border-border rounded-md p-2.5 font-mono text-[11px] text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
               />
-              {bodyJsonError && <p className="text-red-400 text-[10px] mt-0.5">{bodyJsonError}</p>}
+              {bodyJsonError && <p className="text-destructive text-[10px] mt-0.5">{bodyJsonError}</p>}
             </div>
 
             {/* Network tuning */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block mb-1 text-zinc-300">Timeout (ms)</label>
+                <label className="block mb-1 text-foreground">Timeout (ms)</label>
                 <input
                   type="number"
                   value={form.requestTimeout}
                   onChange={(e) => setForm({ ...form, requestTimeout: parseInt(e.target.value) || 60000 })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground font-mono"
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-zinc-300">Max Retries</label>
+                <label className="block mb-1 text-foreground">Max Retries</label>
                 <input
                   type="number"
                   value={form.maxRetries}
                   onChange={(e) => setForm({ ...form, maxRetries: parseInt(e.target.value) || 0 })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground font-mono"
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-zinc-300">Streaming Enabled</label>
+                <label className="block mb-1 text-foreground">Streaming Enabled</label>
                 <select
                   value={form.streamingEnabled ? 'yes' : 'no'}
                   onChange={(e) => setForm({ ...form, streamingEnabled: e.target.value === 'yes' })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground"
                 >
                   <option value="yes">Yes (Server-Sent Events)</option>
                   <option value="no">No (Non-streaming)</option>
@@ -488,46 +489,46 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             {/* Organization / Project / API Version */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block mb-1 text-zinc-300">Organization ID</label>
+                <label className="block mb-1 text-foreground">Organization ID</label>
                 <input
                   type="text"
                   value={form.organizationId || ''}
                   onChange={(e) => setForm({ ...form, organizationId: e.target.value })}
                   placeholder="org-..."
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 font-mono text-[11px]"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground font-mono text-[11px]"
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-zinc-300">Project ID</label>
+                <label className="block mb-1 text-foreground">Project ID</label>
                 <input
                   type="text"
                   value={form.projectId || ''}
                   onChange={(e) => setForm({ ...form, projectId: e.target.value })}
                   placeholder="proj_..."
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 font-mono text-[11px]"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground font-mono text-[11px]"
                 />
               </div>
 
               <div>
-                <label className="block mb-1 text-zinc-300">API Version</label>
+                <label className="block mb-1 text-foreground">API Version</label>
                 <input
                   type="text"
                   value={form.apiVersion || ''}
                   onChange={(e) => setForm({ ...form, apiVersion: e.target.value })}
                   placeholder="2024-02-15-preview"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 font-mono text-[11px]"
+                  className="w-full bg-card border border-border rounded-md px-2.5 py-1.5 text-foreground font-mono text-[11px]"
                 />
               </div>
             </div>
 
             {/* Custom JSON Protocol Mapping */}
             {form.protocol === 'custom-json' && (
-              <div className="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800 space-y-2">
-                <span className="font-semibold text-violet-300 block">Custom JSON API Mapping</span>
+              <div className="p-3 bg-secondary/30 rounded-lg border border-border space-y-2">
+                <span className="font-semibold text-foreground block">Custom JSON API Mapping</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] text-zinc-400">Response Path</label>
+                    <label className="block text-[10px] text-muted-foreground">Response Path</label>
                     <input
                       type="text"
                       value={form.customMapping?.responsePath || ''}
@@ -538,11 +539,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                         })
                       }
                       placeholder="output.text or choices[0].message.content"
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 font-mono text-[11px]"
+                      className="w-full bg-card border border-border rounded px-2 py-1 text-foreground font-mono text-[11px]"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] text-zinc-400">Stream Chunk Path</label>
+                    <label className="block text-[10px] text-muted-foreground">Stream Chunk Path</label>
                     <input
                       type="text"
                       value={form.customMapping?.streamChunkPath || ''}
@@ -553,7 +554,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                         })
                       }
                       placeholder="delta.content or token"
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-100 font-mono text-[11px]"
+                      className="w-full bg-card border border-border rounded px-2 py-1 text-foreground font-mono text-[11px]"
                     />
                   </div>
                 </div>
@@ -564,19 +565,19 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       </div>
 
       {/* Form Submission Footer */}
-      <div className="flex items-center justify-end space-x-2 pt-4 border-t border-zinc-800">
+      <div className="flex items-center justify-end space-x-2 pt-4 border-t border-border">
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium transition-colors"
+          className="px-4 py-2 rounded-md bg-secondary hover:bg-accent text-secondary-foreground font-medium text-xs border border-border transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold shadow-md shadow-violet-600/30 transition-all"
+          className="flex items-center space-x-2 px-4 py-2 rounded-md bg-primary hover:opacity-90 text-primary-foreground font-medium text-xs shadow-sm transition-opacity"
         >
-          <Save className="w-4 h-4" />
+          <Save className="w-3.5 h-3.5" />
           <span>Save Provider</span>
         </button>
       </div>

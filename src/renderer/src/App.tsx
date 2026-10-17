@@ -30,6 +30,11 @@ export const App: React.FC = () => {
         e.preventDefault();
         openSettings();
       }
+      // Ctrl+. or Cmd+.: Focus message composer typing box
+      if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('focus-composer'));
+      }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -37,7 +42,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 select-none">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground select-none font-sans">
       {/* Sleek Custom TitleBar */}
       <TitleBar />
 

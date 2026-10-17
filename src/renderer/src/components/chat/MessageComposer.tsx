@@ -37,12 +37,33 @@ export const MessageComposer: React.FC = () => {
     }
   }, [input]);
 
-  // Focus textarea on mount or when streaming ends
+  // Focus textarea on mount, when streaming ends, or on Ctrl+.
   useEffect(() => {
     if (!isStreaming && textareaRef.current) {
       textareaRef.current.focus();
     }
   }, [isStreaming]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.select();
+      }
+    };
+    const handleKeyDownGlobal = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+        e.preventDefault();
+        handleFocus();
+      }
+    };
+    window.addEventListener('focus-composer', handleFocus);
+    window.addEventListener('keydown', handleKeyDownGlobal);
+    return () => {
+      window.removeEventListener('focus-composer', handleFocus);
+      window.removeEventListener('keydown', handleKeyDownGlobal);
+    };
+  }, []);
 
   const handleSend = () => {
     if ((!input.trim() && attachments.length === 0) || isStreaming) return;
@@ -157,31 +178,32 @@ export const MessageComposer: React.FC = () => {
     (sum, a) => sum + (a.tokenEstimate || 0),
     0
   );
-  const isContextNearLimit = totalAttachmentTokens > (settings.contextWarningLimit || 32000);
+  const contextLimit = settings.contextWarningLimit || 200000;
+  const isContextNearLimit = totalAttachmentTokens > contextLimit;
 
   return (
     <div
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="p-3 sm:p-4 bg-zinc-950/80 border-t border-zinc-800/80 relative"
+      className="p-3 sm:p-4 bg-background border-t border-border relative"
     >
       {/* Drag & Drop Visual Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-violet-950/80 border-2 border-dashed border-violet-500 rounded-2xl m-2 flex flex-col items-center justify-center z-40 backdrop-blur-sm animate-in fade-in duration-150">
-          <UploadCloud className="w-10 h-10 text-violet-400 mb-2 animate-bounce" />
-          <p className="text-sm font-semibold text-violet-200">Drop documents or images to attach</p>
-          <p className="text-xs text-violet-400">PDF, DOCX, Code, Text, PNG, JPEG</p>
+        <div className="absolute inset-0 bg-background/90 border-2 border-dashed border-primary rounded-xl m-2 flex flex-col items-center justify-center z-40 backdrop-blur-sm animate-in fade-in duration-150">
+          <UploadCloud className="w-8 h-8 text-foreground mb-2 animate-bounce" />
+          <p className="text-sm font-semibold text-foreground">Drop documents or images to attach</p>
+          <p className="text-xs text-muted-foreground font-mono">PDF, DOCX, CSV, TXT, PNG, JPEG</p>
         </div>
       )}
 
       <div className="max-w-4xl mx-auto flex flex-col space-y-2">
         {/* Context Limit Warning */}
         {isContextNearLimit && (
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-xs text-amber-300">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs text-foreground">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
             <span>
-              Attached documents contain ~{totalAttachmentTokens.toLocaleString()} tokens, which is approaching the context limit.
+              Attached documents contain ~{totalAttachmentTokens.toLocaleString()} tokens, approaching your context warning limit ({contextLimit >= 1000000 ? `${(contextLimit / 1000000).toFixed(1)}M` : `${Math.round(contextLimit / 1000)}k`}).
             </span>
           </div>
         )}
@@ -200,8 +222,10 @@ export const MessageComposer: React.FC = () => {
         )}
 
         {/* Composer Input Box */}
-        <div className="relative rounded-2xl bg-zinc-900 border border-zinc-800 focus-within:border-violet-500/80 transition-all shadow-lg flex flex-col">
+        <div className="relative rounded-xl bg-card border border-border focus-within:border-ring focus-within:ring-1 focus-within:ring-ring transition-all shadow-sm flex flex-col">
           <textarea
+            id="composer-textarea"
+            aria-label="Chat message input"
             ref={textareaRef}
             rows={1}
             value={input}
@@ -210,63 +234,71 @@ export const MessageComposer: React.FC = () => {
             onPaste={handlePaste}
             placeholder={
               isStreaming
-                ? 'Generation in progress...'
-                : 'Send a message or drop files... (Shift+Enter for newline)'
+                ? 'Model response streaming...'
+                : 'Send a prompt or drag files... (Shift+Enter for newline, Ctrl+. to focus)'
             }
             disabled={isStreaming}
-            className="w-full bg-transparent px-4 pt-3 pb-2 text-xs sm:text-sm text-zinc-100 placeholder-zinc-400 outline-none resize-none leading-relaxed min-h-[46px] max-h-[220px]"
+            className="w-full bg-transparent px-4 pt-3 pb-2 text-xs sm:text-sm text-foreground placeholder-muted-foreground outline-none resize-none leading-relaxed min-h-[46px] max-h-[220px]"
           />
 
           {/* Bottom Composer Toolbar */}
-          <div className="flex items-center justify-between px-3 pb-2.5 pt-1 select-none">
+          <div className="flex items-center justify-between px-3 pb-2 pt-1 select-none">
             {/* Attachment & Tool buttons */}
-            <div className="flex items-center space-x-1.5">
+            <div className="flex items-center space-x-2">
               <button
                 type="button"
                 onClick={handleFileAttach}
                 disabled={isProcessingFile || isStreaming}
-                className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors text-xs font-medium"
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors text-xs font-medium"
                 title="Attach Document or Image"
+                aria-label="Attach File"
               >
                 {isProcessingFile ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-foreground" />
                 ) : (
-                  <Paperclip className="w-4 h-4 text-zinc-400" />
+                  <Paperclip className="w-3.5 h-3.5" />
                 )}
                 <span className="hidden sm:inline">Attach</span>
               </button>
 
               {totalAttachmentTokens > 0 && (
-                <span className="text-[10px] text-zinc-400 font-mono">
-                  ~{totalAttachmentTokens} tokens
+                <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded border border-border">
+                  ~{totalAttachmentTokens >= 1000000
+                    ? `${(totalAttachmentTokens / 1000000).toFixed(1)}M`
+                    : totalAttachmentTokens >= 1000
+                    ? `${(totalAttachmentTokens / 1000).toFixed(1)}k`
+                    : totalAttachmentTokens} tokens
                 </span>
               )}
             </div>
 
             {/* Send / Stop Buttons */}
             <div className="flex items-center space-x-2">
-              <span className="text-[10px] text-zinc-400 hidden md:inline">
-                {settings.sendOnEnter ? 'Enter to send' : 'Ctrl+Enter to send'}
+              <span className="text-[10px] text-muted-foreground hidden md:inline font-mono">
+                <kbd className="bg-secondary border border-border px-1 py-0.5 rounded text-[9px] mr-1">Ctrl+.</kbd>
+                to focus • {settings.sendOnEnter ? '↵ to send' : '⌘↵ to send'}
               </span>
 
               {isStreaming ? (
                 <button
                   type="button"
                   onClick={stopGeneration}
-                  className="p-2 rounded-xl bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-600/30 transition-all"
+                  className="p-2 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 shadow-sm transition-all active:scale-95"
                   title="Stop generation"
+                  aria-label="Stop Generation"
                 >
-                  <Square className="w-4 h-4 fill-white" />
+                  <Square className="w-3.5 h-3.5 fill-current" />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleSend}
                   disabled={!input.trim() && attachments.length === 0}
-                  className="p-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:hover:bg-violet-600 text-white shadow-md shadow-violet-600/30 transition-all"
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-30 disabled:hover:opacity-30 shadow-sm transition-all active:scale-95"
                   title="Send message"
+                  aria-label="Send Message"
                 >
-                  <ArrowUp className="w-4 h-4" />
+                  <ArrowUp className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>

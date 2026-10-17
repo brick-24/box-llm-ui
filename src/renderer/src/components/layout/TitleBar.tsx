@@ -1,5 +1,5 @@
 import React from 'react';
-import { Minus, Square, X, Sparkles, Cpu } from 'lucide-react';
+import { Minus, Square, X, Cpu } from 'lucide-react';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useChatStore } from '../../store/useChatStore';
 
@@ -14,22 +14,28 @@ export const TitleBar: React.FC = () => {
   const currentModel = activeConversation?.modelId || activeProvider?.defaultModel || 'No Model Selected';
 
   return (
-    <div className="h-10 bg-zinc-950/90 border-b border-zinc-800/80 flex items-center justify-between px-3 select-none drag-region z-50 backdrop-blur-md">
-      {/* Brand & Title */}
+    <div className="h-10 bg-background/95 border-b border-border flex items-center justify-between px-3 select-none drag-region z-50 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+      {/* Brand Lockup */}
       <div className="flex items-center space-x-2.5">
-        <div className="w-5 h-5 rounded-md bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-sm shadow-violet-500/20">
-          <Sparkles className="w-3 h-3 text-white" />
+        <div className="w-5 h-5 rounded-md bg-foreground text-background flex items-center justify-center font-bold shadow-sm">
+          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
         </div>
-        <span className="text-xs font-semibold tracking-wide text-zinc-200">Universal LLM</span>
-        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">v1.0</span>
+        <div className="flex items-center space-x-1.5">
+          <span className="text-xs font-semibold tracking-tight text-foreground">universal<span className="text-muted-foreground font-normal">/</span>llm</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">v1.0</span>
+        </div>
       </div>
 
       {/* Center Model Indicator */}
-      <div className="hidden sm:flex items-center space-x-1.5 text-xs text-zinc-400 bg-zinc-900/80 px-3 py-1 rounded-full border border-zinc-800/60 no-drag">
-        <Cpu className="w-3.5 h-3.5 text-violet-400" />
-        <span className="text-zinc-300 font-medium truncate max-w-[220px]">{currentModel}</span>
+      <div className="hidden sm:flex items-center space-x-2 text-xs text-muted-foreground bg-secondary/50 hover:bg-secondary px-3 py-1 rounded-full border border-border no-drag transition-colors">
+        <span className={`w-1.5 h-1.5 rounded-full ${activeProvider?.isConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+        <Cpu className="w-3.5 h-3.5 text-foreground/70" />
+        <span className="text-foreground font-medium font-mono text-[11px] truncate max-w-[220px]">{currentModel}</span>
         {activeProvider && (
-          <span className="text-[10px] text-zinc-500 font-mono">({activeProvider.name})</span>
+          <span className="text-[10px] text-muted-foreground font-mono">({activeProvider.name})</span>
         )}
       </div>
 
@@ -37,22 +43,25 @@ export const TitleBar: React.FC = () => {
       <div className="flex items-center space-x-1 no-drag">
         <button
           onClick={handleMinimize}
-          className="w-7 h-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           title="Minimize"
+          aria-label="Minimize Window"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleMaximize}
-          className="w-7 h-7 flex items-center justify-center rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/70 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           title="Maximize"
+          aria-label="Maximize Window"
         >
           <Square className="w-3 h-3" />
         </button>
         <button
           onClick={handleClose}
-          className="w-7 h-7 flex items-center justify-center rounded text-zinc-400 hover:text-white hover:bg-red-600/90 transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive-foreground hover:bg-destructive transition-colors"
           title="Close"
+          aria-label="Close Window"
         >
           <X className="w-3.5 h-3.5" />
         </button>

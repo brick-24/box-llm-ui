@@ -53,10 +53,20 @@ export function createSseStreamParser(options: ParseOptions) {
           finishReason = choice.finish_reason;
         }
 
-        const deltaContent = choice.delta?.content || choice.text;
+        let deltaContent = choice.delta?.content ?? choice.text ?? choice.message?.content;
+        if (deltaContent === undefined && (choice.delta?.reasoning_content || choice.message?.reasoning_content)) {
+          deltaContent = choice.delta?.reasoning_content || choice.message?.reasoning_content;
+        }
+
         if (typeof deltaContent === 'string' && deltaContent.length > 0) {
           fullText += deltaContent;
           options.onDelta(deltaContent, fullText);
+        } else if (Array.isArray(deltaContent)) {
+          const piece = deltaContent.map((c: any) => (typeof c === 'string' ? c : c.text || '')).join('');
+          if (piece) {
+            fullText += piece;
+            options.onDelta(piece, fullText);
+          }
         }
       }
     } catch (err) {

@@ -47,7 +47,7 @@ export class OpenAiAdapter implements IProviderAdapter {
               id: item.id,
               name: item.id,
               description: item.owned_by ? `Owned by: ${item.owned_by}` : undefined,
-              contextLength: item.context_length,
+              contextLength: item.context_length || item.context_window || item.max_context_length || item.max_model_len,
             });
           }
         }
@@ -60,6 +60,7 @@ export class OpenAiAdapter implements IProviderAdapter {
               id,
               name: id,
               description: item.details?.parameter_size ? `Size: ${item.details.parameter_size}` : undefined,
+              contextLength: item.details?.context_length || item.context_length || item.context_window,
             });
           }
         }
@@ -68,7 +69,11 @@ export class OpenAiAdapter implements IProviderAdapter {
         for (const item of json) {
           const id = typeof item === 'string' ? item : item.id || item.name;
           if (id) {
-            models.push({ id, name: id });
+            models.push({
+              id,
+              name: id,
+              contextLength: typeof item === 'object' ? (item.context_length || item.context_window || item.max_model_len) : undefined,
+            });
           }
         }
       }
@@ -148,13 +153,53 @@ export class OpenAiAdapter implements IProviderAdapter {
       let parsedErr = errBody;
       try {
         const j = JSON.parse(errBody);
-        if (j.error?.message) parsedErr = j.error.message;
+        if (j.error?.message) {
+          parsedErr = j.error.message;
+        } else if (Array.isArray(j.detail)) {
+          parsedErr = j.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+        } else if (typeof j.detail === 'string') {
+          parsedErr = j.detail;
+        }
       } catch {}
       throw new Error(`API Error ${res.status}: ${parsedErr}`);
     }
 
     if (!res.body) {
       throw new Error('Response body is empty, cannot read stream.');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      // The server answered with a non-streamed JSON response despite stream: true
+      const json = await res.json();
+      const choice = json.choices?.[0];
+      let content = '';
+      if (typeof choice?.message?.content === 'string') {
+        content = choice.message.content;
+      } else if (Array.isArray(choice?.message?.content)) {
+        content = choice.message.content.map((c: any) => (typeof c === 'string' ? c : c.text || '')).join('');
+      } else if (typeof choice?.delta?.content === 'string') {
+        content = choice.delta.content;
+      } else if (typeof choice?.text === 'string') {
+        content = choice.text;
+      }
+
+      if (!content && choice?.message?.reasoning_content) {
+        content = choice.message.reasoning_content;
+      }
+
+      const usage = json.usage
+        ? {
+            promptTokens: json.usage.prompt_tokens,
+            completionTokens: json.usage.completion_tokens,
+            totalTokens: json.usage.total_tokens,
+          }
+        : undefined;
+
+      const finishReason = choice?.finish_reason || 'stop';
+      callbacks.onChunk(content, content);
+      callbacks.onEnd(content, usage, finishReason);
+      return;
     }
 
     const reader = res.body.getReader();
@@ -174,20 +219,53 @@ export class OpenAiAdapter implements IProviderAdapter {
       },
     });
 
+    let rawAccumulated = '';
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const text = decoder.decode(value, { stream: true });
+        rawAccumulated += text;
         parser.feed(text);
       }
       // If server finished stream without explicit [DONE]
       if (!streamCompleted) {
-        callbacks.onEnd(
-          parser.getFullText(),
-          parser.getTokenUsage(),
-          parser.getFinishReason() || 'stop'
-        );
+        let full = parser.getFullText();
+        let usage = parser.getTokenUsage();
+        let finish = parser.getFinishReason() || 'stop';
+
+        // Fallback: if parser produced empty text, maybe rawAccumulated is a single JSON response
+        if (!full && rawAccumulated.trim()) {
+          try {
+            const json = JSON.parse(rawAccumulated.trim());
+            const choice = json.choices?.[0];
+            full = choice?.message?.content || choice?.delta?.content || choice?.text || choice?.message?.reasoning_content || '';
+            if (json.usage) {
+              usage = {
+                promptTokens: json.usage.prompt_tokens,
+                completionTokens: json.usage.completion_tokens,
+                totalTokens: json.usage.total_tokens,
+              };
+            }
+            if (choice?.finish_reason) finish = choice.finish_reason;
+          } catch {
+            const lines = rawAccumulated.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === '[DONE]') continue;
+              try {
+                const clean = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+                const j = JSON.parse(clean);
+                const c = j.choices?.[0];
+                const piece = c?.delta?.content || c?.text || c?.message?.content || '';
+                if (piece) full += piece;
+                if (c?.finish_reason) finish = c.finish_reason;
+              } catch {}
+            }
+          }
+        }
+
+        callbacks.onEnd(full, usage, finish);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -240,7 +318,13 @@ export class OpenAiAdapter implements IProviderAdapter {
       let parsed = errBody;
       try {
         const j = JSON.parse(errBody);
-        if (j.error?.message) parsed = j.error.message;
+        if (j.error?.message) {
+          parsed = j.error.message;
+        } else if (Array.isArray(j.detail)) {
+          parsed = j.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+        } else if (typeof j.detail === 'string') {
+          parsed = j.detail;
+        }
       } catch {}
       throw new Error(`API Error ${res.status}: ${parsed}`);
     }

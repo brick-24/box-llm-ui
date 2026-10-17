@@ -6,7 +6,6 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   X,
-  Eye,
   CheckCircle2,
 } from 'lucide-react';
 import { MessageAttachment } from '@shared/types';
@@ -33,31 +32,31 @@ export const AttachmentChip: React.FC<AttachmentChipProps> = ({
 
   const getIcon = () => {
     if (attachment.type.startsWith('image/')) {
-      return <ImageIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+      return <ImageIcon className="w-3.5 h-3.5 text-foreground shrink-0" />;
     }
     if (attachment.type === 'application/pdf') {
-      return <FileText className="w-3.5 h-3.5 text-red-400 shrink-0" />;
+      return <FileText className="w-3.5 h-3.5 text-foreground shrink-0" />;
     }
     if (attachment.type.includes('word') || attachment.name.endsWith('.docx')) {
-      return <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />;
+      return <FileText className="w-3.5 h-3.5 text-foreground shrink-0" />;
     }
     if (attachment.type.includes('csv') || attachment.type.includes('sheet') || attachment.name.endsWith('.csv')) {
-      return <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+      return <FileSpreadsheet className="w-3.5 h-3.5 text-foreground shrink-0" />;
     }
-    return <FileCode className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
+    return <FileCode className="w-3.5 h-3.5 text-foreground shrink-0" />;
   };
 
   return (
     <div
       onClick={() => showPreviewAction && setSelectedAttachmentForModal(attachment)}
-      className="inline-flex items-center space-x-2 px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-xs text-zinc-300 max-w-[240px] truncate shadow-sm transition-all cursor-pointer group"
+      className="inline-flex items-center space-x-2 px-2.5 py-1 rounded-md bg-secondary/80 border border-border hover:bg-secondary text-xs text-secondary-foreground max-w-[240px] truncate shadow-sm transition-colors cursor-pointer group select-none"
     >
       {/* Thumbnail or Icon */}
       {attachment.previewDataUrl && attachment.type.startsWith('image/') ? (
         <img
           src={attachment.previewDataUrl}
           alt={attachment.name}
-          className="w-5 h-5 rounded object-cover border border-zinc-700"
+          className="w-4 h-4 rounded object-cover border border-border"
         />
       ) : (
         getIcon()
@@ -65,8 +64,8 @@ export const AttachmentChip: React.FC<AttachmentChipProps> = ({
 
       {/* File Details */}
       <div className="flex flex-col truncate min-w-0 flex-1">
-        <span className="truncate font-medium text-zinc-200">{attachment.name}</span>
-        <div className="flex items-center space-x-1.5 text-[10px] text-zinc-400">
+        <span className="truncate font-medium text-foreground text-xs">{attachment.name}</span>
+        <div className="flex items-center space-x-1.5 text-[10px] text-muted-foreground font-mono">
           <span>{formatSize(attachment.size)}</span>
           {attachment.pageCount && <span>• {attachment.pageCount} pgs</span>}
           {attachment.tokenEstimate && <span>• ~{attachment.tokenEstimate} tok</span>}
@@ -76,12 +75,12 @@ export const AttachmentChip: React.FC<AttachmentChipProps> = ({
       {/* Status indicator */}
       {attachment.status === 'warning' && (
         <span title={attachment.errorMessage || 'Scanned or low-text document'}>
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
         </span>
       )}
       {attachment.status === 'success' && (
         <span title="Ready">
-          <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 opacity-70 group-hover:opacity-100" />
+          <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0 opacity-70 group-hover:opacity-100" />
         </span>
       )}
 
@@ -93,8 +92,9 @@ export const AttachmentChip: React.FC<AttachmentChipProps> = ({
             e.stopPropagation();
             onRemove();
           }}
-          className="p-1 rounded-full text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+          className="p-0.5 rounded text-muted-foreground hover:text-destructive hover:bg-background transition-colors"
           title="Remove attachment"
+          aria-label="Remove Attachment"
         >
           <X className="w-3 h-3" />
         </button>

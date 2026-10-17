@@ -225,11 +225,13 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.MESSAGES_SEND, async (_event, options: SendMessageOptions) => {
-    // Launch execution asynchronously; stream chunks will be dispatched over IPC
-    chatEngine.executeChat(options).catch((err) => {
+    try {
+      const result = await chatEngine.executeChat(options);
+      return { success: result.status !== 'error', ...result };
+    } catch (err: any) {
       console.error('[Handlers] Error executing chat:', err);
-    });
-    return { success: true };
+      return { success: false, error: err.message || String(err) };
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.MESSAGES_STOP, async (_event, conversationId: string) => {

@@ -19,9 +19,10 @@ export class DocumentChunker {
     text: string,
     options: ChunkOptions = {}
   ): { chunks: string[]; totalTokens: number } {
-    const maxTokens = options.maxTokensPerChunk || 4000;
+    // Support large context models (up to 1M+) without fragmentation, defaulting to 200k tokens per chunk
+    const maxTokens = options.maxTokensPerChunk || 200000;
     const maxChars = maxTokens * 4;
-    const overlapChars = (options.overlapTokens || 200) * 4;
+    const overlapChars = (options.overlapTokens || 500) * 4;
 
     const totalTokens = this.estimateTokens(text);
     if (totalTokens <= maxTokens) {

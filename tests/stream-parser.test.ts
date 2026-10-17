@@ -57,4 +57,38 @@ describe('SSE Stream Parser', () => {
 
     expect(completedText).toBe('Split chunk test');
   });
+
+  it('handles message.content and reasoning_content from OpenAI proxies', () => {
+    let completedText = '';
+
+    const parser = createSseStreamParser({
+      onDelta: () => {},
+      onDone: (fullText) => {
+        completedText = fullText;
+      },
+      onError: () => {},
+    });
+
+    const chunk1 = 'data: {"choices":[{"message":{"content":"Direct message content"}}]}\n\ndata: [DONE]\n\n';
+    parser.feed(chunk1);
+
+    expect(completedText).toBe('Direct message content');
+  });
+
+  it('handles reasoning_content from thinking models', () => {
+    let completedText = '';
+
+    const parser = createSseStreamParser({
+      onDelta: () => {},
+      onDone: (fullText) => {
+        completedText = fullText;
+      },
+      onError: () => {},
+    });
+
+    const chunk1 = 'data: {"choices":[{"delta":{"reasoning_content":"Thinking steps..."}}]}\n\ndata: [DONE]\n\n';
+    parser.feed(chunk1);
+
+    expect(completedText).toBe('Thinking steps...');
+  });
 });

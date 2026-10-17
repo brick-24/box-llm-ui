@@ -18,17 +18,17 @@ export const AttachmentModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-zinc-900 border border-zinc-750 w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+      <div className="bg-card text-card-foreground border border-border w-full max-w-3xl rounded-xl shadow-xl flex flex-col max-h-[85vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950/60">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-muted/20">
           <div className="flex items-center space-x-3 truncate mr-4">
-            <div className="w-9 h-9 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
-              <FileText className="w-5 h-5" />
+            <div className="w-8 h-8 rounded-lg bg-secondary border border-border flex items-center justify-center text-foreground shrink-0">
+              <FileText className="w-4 h-4" />
             </div>
             <div className="truncate">
-              <h3 className="text-sm font-semibold text-zinc-100 truncate">{att.name}</h3>
-              <p className="text-xs text-zinc-400">
+              <h3 className="text-sm font-semibold text-foreground truncate">{att.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono">
                 {att.type} • {(att.size / 1024).toFixed(1)} KB
                 {att.pageCount ? ` • ${att.pageCount} Pages` : ''}
                 {att.tokenEstimate ? ` • ~${att.tokenEstimate} Estimated Tokens` : ''}
@@ -40,12 +40,12 @@ export const AttachmentModal: React.FC = () => {
             {att.extractedText && (
               <button
                 onClick={handleCopy}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 transition-colors"
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-xs text-secondary-foreground border border-border transition-colors font-medium"
               >
                 {copied ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">Copied</span>
+                    <Check className="w-3.5 h-3.5 text-foreground" />
+                    <span>Copied</span>
                   </>
                 ) : (
                   <>
@@ -58,46 +58,47 @@ export const AttachmentModal: React.FC = () => {
 
             <button
               onClick={() => setSelectedAttachmentForModal(null)}
-              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              aria-label="Close Modal"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Scanned/Warning banner */}
+        {/* Warning banner */}
         {att.status === 'warning' && (
-          <div className="px-6 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center space-x-2.5 text-xs text-amber-300">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+          <div className="px-5 py-2.5 bg-secondary border-b border-border flex items-center space-x-2.5 text-xs text-foreground">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
             <span>{att.errorMessage || 'This document has limited selectable text and may be scanned.'}</span>
           </div>
         )}
 
         {/* Content body */}
-        <div className="p-6 overflow-y-auto flex-1 font-mono text-xs leading-relaxed text-zinc-300 bg-zinc-950/40">
+        <div className="p-5 overflow-y-auto flex-1 font-mono text-xs leading-relaxed text-foreground bg-background">
           {att.previewDataUrl && att.type.startsWith('image/') ? (
             <div className="flex flex-col items-center justify-center p-4">
               <img
                 src={att.previewDataUrl}
                 alt={att.name}
-                className="max-h-[500px] rounded-xl shadow-lg border border-zinc-800 object-contain"
+                className="max-h-[500px] rounded-lg shadow-sm border border-border object-contain"
               />
             </div>
           ) : att.extractedText ? (
             <pre className="whitespace-pre-wrap break-words">{att.extractedText}</pre>
           ) : (
-            <div className="text-center py-12 text-zinc-500">
+            <div className="text-center py-12 text-muted-foreground">
               <p>No extracted text available for this attachment.</p>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-zinc-800/80 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-500">
-          <span>Strategy: {att.strategy}</span>
+        <div className="px-5 py-3 border-t border-border bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
+          <span className="font-mono text-[11px]">Extraction: {att.strategy}</span>
           <button
             onClick={() => setSelectedAttachmentForModal(null)}
-            className="px-4 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors"
+            className="px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-xs font-medium border border-border transition-colors"
           >
             Close
           </button>

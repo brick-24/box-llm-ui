@@ -1,0 +1,60 @@
+{
+  "name": "universal-llm-client",
+  "version": "1.0.0",
+  "description": "Universal LLM Desktop Client using Electron, React, and TypeScript",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "build:renderer": "vite build",
+    "build:main": "node scripts/build.js",
+    "dev": "node scripts/dev.js",
+    "build": "npm run build:renderer && npm run build:main",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "dist": "npm run build && electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "llm",
+    "chatgpt",
+    "openai",
+    "desktop",
+    "react",
+    "universal"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "eventsource-parser": "^3.0.0",
+    "katex": "^0.16.21",
+    "lucide-react": "^1.16.0",
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "sql.js": "^1.15.0",
+    "zod": "^3.24.2",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@types/katex": "^0.16.7",
+    "@types/node": "^22.13.5",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.6"
+  }
+}

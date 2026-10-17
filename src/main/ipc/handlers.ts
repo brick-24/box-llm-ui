@@ -1,0 +1,343 @@
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import { IPC_CHANNELS } from './channels';
+import { AppDatabase } from '../storage/database';
+import { CredentialManager } from '../storage/credentials';
+import { ChatEngine, SendMessageOptions } from '../engine/chat-engine';
+import { DocumentProcessor } from '../documents/document-processor';
+import { AdapterFactory } from '../providers/adapter-factory';
+import { DiagnosticsService } from '../engine/diagnostics';
+import {
+  ProviderConfigSchema,
+  ConversationSchema,
+  AppSettingsSchema,
+} from '../../shared/validation';
+import { ProviderConfig, Conversation } from '../../shared/types';
+
+export function registerIpcHandlers(
+  db: AppDatabase,
+  creds: CredentialManager,
+  chatEngine: ChatEngine,
+  getMainWindow: () => BrowserWindow | null
+) {
+  // === PROVIDERS ===
+  ipcMain.handle(IPC_CHANNELS.PROVIDERS_GET_ALL, async () => {
+    const list = db.getProviders();
+    // Mask sensitive API keys when returning to renderer for security
+    return list.map((p) => {
+      const decrypted = creds.decrypt(p.apiKey);
+      const isConfigured = Boolean(decrypted && decrypted.trim());
+      const maskedKey = isConfigured
+        ? (decrypted.length > 8 ? `••••••••••••${decrypted.slice(-4)}` : '••••••••')
+        : '';
+      return {
+        ...p,
+        apiKey: maskedKey,
+        isConfigured,
+      };
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROVIDERS_SAVE, async (_event, rawConfig: ProviderConfig) => {
+    const validated = ProviderConfigSchema.parse(rawConfig);
+    // If the apiKey is masked (e.g. starts with ••••), keep existing stored encrypted key
+    let finalKey = validated.apiKey;
+    if (finalKey.startsWith('•') || finalKey.startsWith('••••')) {
+      const existing = db.getProviders().find((p) => p.id === validated.id);
+      if (existing) {
+        finalKey = existing.apiKey; // already encrypted
+      }
+    } else if (finalKey) {
+      finalKey = creds.encrypt(finalKey);
+    }
+
+    const configToSave: ProviderConfig = {
+      ...validated,
+      apiKey: finalKey,
+      updatedAt: Date.now(),
+    };
+
+    db.saveProvider(configToSave);
+    DiagnosticsService.log('info', 'storage', `Saved provider configuration: ${validated.name}`);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROVIDERS_DELETE, async (_event, id: string) => {
+    if (typeof id !== 'string') throw new Error('Invalid ID');
+    db.deleteProvider(id);
+    DiagnosticsService.log('info', 'storage', `Deleted provider ${id}`);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROVIDERS_TEST, async (_event, rawConfig: ProviderConfig) => {
+    const validated = ProviderConfigSchema.parse(rawConfig);
+    let resolvedKey = validated.apiKey;
+    if (resolvedKey.startsWith('•') || resolvedKey.startsWith('••••')) {
+      const existing = db.getProviders().find((p) => p.id === validated.id);
+      if (existing) {
+        resolvedKey = creds.decrypt(existing.apiKey);
+      }
+    }
+
+    const fullConfig: ProviderConfig = {
+      ...validated,
+      apiKey: resolvedKey,
+    };
+
+    const adapter = AdapterFactory.getAdapter(fullConfig.protocol);
+    DiagnosticsService.log('info', 'api', `Testing connection for ${fullConfig.name} (${fullConfig.baseUrl})`);
+    return await adapter.testConnection(fullConfig);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROVIDERS_FETCH_MODELS, async (_event, rawConfig: ProviderConfig) => {
+    const validated = ProviderConfigSchema.parse(rawConfig);
+    let resolvedKey = validated.apiKey;
+    if (resolvedKey.startsWith('•') || resolvedKey.startsWith('••••')) {
+      const existing = db.getProviders().find((p) => p.id === validated.id);
+      if (existing) {
+        resolvedKey = creds.decrypt(existing.apiKey);
+      }
+    }
+
+    const fullConfig: ProviderConfig = {
+      ...validated,
+      apiKey: resolvedKey,
+    };
+
+    const adapter = AdapterFactory.getAdapter(fullConfig.protocol);
+    DiagnosticsService.log('info', 'api', `Fetching models from ${fullConfig.modelListUrl || fullConfig.baseUrl}`);
+    return await adapter.fetchModels(fullConfig);
+  });
+
+  // === CONVERSATIONS ===
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_GET_ALL, async () => {
+    return db.getConversations();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_CREATE, async (_event, rawConv: Conversation) => {
+    const validated = ConversationSchema.parse(rawConv);
+    db.createConversation(validated);
+    return validated;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_UPDATE, async (_event, conv: Partial<Conversation> & { id: string }) => {
+    if (!conv.id) throw new Error('Conversation ID required');
+    db.updateConversation(conv);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_DELETE, async (_event, id: string) => {
+    if (typeof id !== 'string') throw new Error('Invalid ID');
+    chatEngine.stopGeneration(id);
+    db.deleteConversation(id);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_SEARCH, async (_event, query: string) => {
+    return db.searchConversations(query || '');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_EXPORT_MARKDOWN, async (_event, conversationId: string) => {
+    const conv = db.getConversation(conversationId);
+    if (!conv) throw new Error('Conversation not found');
+    const msgs = db.getMessages(conversationId);
+
+    let md = `# ${conv.title}\n\n`;
+    md += `*Exported on ${new Date().toLocaleString()}*\n`;
+    md += `*Model: ${conv.modelId}*\n\n---\n\n`;
+
+    if (conv.systemPrompt) {
+      md += `> **System Prompt:** ${conv.systemPrompt}\n\n---\n\n`;
+    }
+
+    for (const m of msgs) {
+      const roleLabel = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role;
+      md += `### ${roleLabel}\n\n${m.content}\n\n`;
+
+      if (m.attachments && m.attachments.length > 0) {
+        md += `*Attachments:*\n`;
+        for (const a of m.attachments) {
+          md += `- ${a.name} (${a.type}, ${a.size} bytes)\n`;
+        }
+        md += '\n';
+      }
+      md += '---\n\n';
+    }
+
+    const win = getMainWindow();
+    if (!win) return { success: false };
+
+    const saveRes = await dialog.showSaveDialog(win, {
+      title: 'Export Conversation as Markdown',
+      defaultPath: `${conv.title.replace(/[\\/:*?"<>|]/g, '_')}.md`,
+      filters: [{ name: 'Markdown Files', extensions: ['md'] }],
+    });
+
+    if (!saveRes.canceled && saveRes.filePath) {
+      fs.writeFileSync(saveRes.filePath, md, 'utf8');
+      return { success: true, filePath: saveRes.filePath };
+    }
+    return { success: false, cancelled: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_EXPORT_JSON, async () => {
+    const data = db.exportAllData();
+    const win = getMainWindow();
+    if (!win) return { success: false };
+
+    const saveRes = await dialog.showSaveDialog(win, {
+      title: 'Export All Conversations (JSON)',
+      defaultPath: `universal-llm-backup-${Date.now()}.json`,
+      filters: [{ name: 'JSON Archive', extensions: ['json'] }],
+    });
+
+    if (!saveRes.canceled && saveRes.filePath) {
+      fs.writeFileSync(saveRes.filePath, JSON.stringify(data, null, 2), 'utf8');
+      return { success: true, filePath: saveRes.filePath };
+    }
+    return { success: false, cancelled: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CONVERSATIONS_IMPORT_JSON, async () => {
+    const win = getMainWindow();
+    if (!win) return { success: false };
+
+    const openRes = await dialog.showOpenDialog(win, {
+      title: 'Import Conversation Archive',
+      filters: [{ name: 'JSON Archive', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+
+    if (!openRes.canceled && openRes.filePaths[0]) {
+      const content = fs.readFileSync(openRes.filePaths[0], 'utf8');
+      const parsed = JSON.parse(content);
+      const res = db.importData(parsed);
+      return { success: true, ...res };
+    }
+    return { success: false, cancelled: true };
+  });
+
+  // === MESSAGES ===
+  ipcMain.handle(IPC_CHANNELS.MESSAGES_GET_ALL, async (_event, conversationId: string) => {
+    if (typeof conversationId !== 'string') return [];
+    return db.getMessages(conversationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MESSAGES_SEND, async (_event, options: SendMessageOptions) => {
+    // Launch execution asynchronously; stream chunks will be dispatched over IPC
+    chatEngine.executeChat(options).catch((err) => {
+      console.error('[Handlers] Error executing chat:', err);
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MESSAGES_STOP, async (_event, conversationId: string) => {
+    return chatEngine.stopGeneration(conversationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MESSAGES_DELETE, async (_event, messageId: string) => {
+    db.deleteMessage(messageId);
+    return { success: true };
+  });
+
+  // === DOCUMENTS ===
+  ipcMain.handle(IPC_CHANNELS.DOCUMENTS_SELECT_DIALOG, async () => {
+    const win = getMainWindow();
+    if (!win) return null;
+
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Attach Documents or Images',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'All Supported Files',
+          extensions: [
+            'pdf', 'docx', 'txt', 'md', 'csv', 'json', 'xml', 'html',
+            'png', 'jpg', 'jpeg', 'webp', 'gif',
+            'js', 'ts', 'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'sql', 'sh', 'yaml', 'yml'
+          ],
+        },
+        { name: 'Documents (PDF, DOCX, Text, Markdown)', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'json'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+      ],
+    });
+
+    if (res.canceled || !res.filePaths.length) {
+      return [];
+    }
+
+    const attachments = [];
+    for (const fp of res.filePaths) {
+      try {
+        const att = await DocumentProcessor.processFile(fp);
+        attachments.push(att);
+        DiagnosticsService.log('info', 'document', `Processed file ${att.name}`, {
+          type: att.type,
+          size: att.size,
+          tokens: att.tokenEstimate,
+        });
+      } catch (err: any) {
+        DiagnosticsService.log('error', 'document', `Failed to process ${path.basename(fp)}: ${err.message}`);
+      }
+    }
+    return attachments;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOCUMENTS_PROCESS_FILE, async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !fs.existsSync(filePath)) {
+      throw new Error('File path does not exist');
+    }
+    return await DocumentProcessor.processFile(filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOCUMENTS_PROCESS_BUFFER, async (_event, base64: string, filename: string, mimeType: string) => {
+    const buffer = Buffer.from(base64, 'base64');
+    return await DocumentProcessor.processBuffer(buffer, filename, mimeType);
+  });
+
+  // === SETTINGS ===
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, async () => {
+    return db.getSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SAVE, async (_event, rawSettings: any) => {
+    const validated = AppSettingsSchema.parse(rawSettings);
+    db.saveSettings(validated);
+    DiagnosticsService.log('info', 'storage', 'Application settings updated');
+    return { success: true };
+  });
+
+  // === DIAGNOSTICS ===
+  ipcMain.handle(IPC_CHANNELS.DIAGNOSTICS_GET, async () => {
+    return DiagnosticsService.getLogs(150);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DIAGNOSTICS_CLEAR, async () => {
+    DiagnosticsService.clearLogs();
+    return { success: true };
+  });
+
+  // === WINDOW & SYSTEM ===
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
+    getMainWindow()?.minimize();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
+    const win = getMainWindow();
+    if (win) {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, () => {
+    getMainWindow()?.close();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {
+    if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+      shell.openExternal(url);
+    }
+  });
+}

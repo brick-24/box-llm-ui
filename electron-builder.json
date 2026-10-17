@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.universalllm.client",
+  "productName": "Universal LLM",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+    "!**/node_modules/*.d.ts",
+    "!**/node_modules/.bin"
+  ],
+  "extraResources": [
+    {
+      "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+      "to": "sql-wasm.wasm"
+    }
+  ],
+  "win": {
+    "target": ["nsis", "portable"],
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.productivity",
+    "artifactName": "${productName}-${version}.${ext}"
+  },
+  "linux": {
+    "target": ["AppImage", "tar.gz"],
+    "category": "Office",
+    "artifactName": "${productName}-${version}.${ext}"
+  }
+}

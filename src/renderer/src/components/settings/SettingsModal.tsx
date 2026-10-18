@@ -428,6 +428,9 @@ export const SettingsModal: React.FC = () => {
                         : `${Math.round(settings.defaultMaxTokens / 1000)}K`} tokens
                     </span>
                   </div>
+                  <p className="text-[11px] text-muted-foreground mb-2">
+                    Baseline generation ceiling. In chat, controls dynamically adapt to each model's maximum allowed output tokens (e.g. 8K for Claude, 16K for GPT-4o, 65K for Gemini).
+                  </p>
                   <input
                     type="number"
                     min="128"

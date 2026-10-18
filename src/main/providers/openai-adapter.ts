@@ -13,6 +13,7 @@ import {
   TokenUsage,
 } from '../../shared/types';
 import { createSseStreamParser } from '../engine/stream-parser';
+import { resolveModelLimits, clampOutputTokens } from '../../shared/model-limits';
 
 export class OpenAiAdapter implements IProviderAdapter {
   public async fetchModels(config: ProviderConfig): Promise<ModelInfo[]> {
@@ -39,16 +40,47 @@ export class OpenAiAdapter implements IProviderAdapter {
       const json = await res.json();
       const models: ModelInfo[] = [];
 
-      // Case 1: Standard OpenAI { data: [ { id: "gpt-4" } ] }
+      const buildEnrichedModel = (
+        id: string,
+        displayName?: string,
+        description?: string,
+        rawItem?: any
+      ): ModelInfo => {
+        const rawCtx =
+          rawItem?.context_length ??
+          rawItem?.context_window ??
+          rawItem?.max_context_length ??
+          rawItem?.max_model_len ??
+          rawItem?.details?.context_length;
+
+        const rawMaxOutput =
+          rawItem?.top_provider?.max_completion_tokens ??
+          rawItem?.per_request_limits?.completion_tokens ??
+          rawItem?.max_output_tokens ??
+          rawItem?.max_completion_tokens ??
+          rawItem?.max_tokens;
+
+        const limits = resolveModelLimits(id, {
+          contextLength: typeof rawCtx === 'number' && rawCtx > 0 ? rawCtx : undefined,
+          maxOutputTokens: typeof rawMaxOutput === 'number' && rawMaxOutput > 0 ? rawMaxOutput : undefined,
+        });
+
+        return {
+          id,
+          name: displayName || id,
+          description,
+          contextLength: limits.contextLength,
+          maxOutputTokens: limits.maxOutputTokens,
+          defaultOutputTokens: limits.defaultOutputTokens,
+        };
+      };
+
+      // Case 1: Standard OpenAI / OpenRouter { data: [ { id: "gpt-4o", name: ... } ] }
       if (Array.isArray(json.data)) {
         for (const item of json.data) {
           if (item && item.id) {
-            models.push({
-              id: item.id,
-              name: item.id,
-              description: item.owned_by ? `Owned by: ${item.owned_by}` : undefined,
-              contextLength: item.context_length || item.context_window || item.max_context_length || item.max_model_len,
-            });
+            const desc = item.description || (item.owned_by ? `Owned by: ${item.owned_by}` : undefined);
+            models.push(buildEnrichedModel(item.id, item.name || item.id, desc, item));
           }
         }
       } else if (Array.isArray(json.models)) {
@@ -56,12 +88,8 @@ export class OpenAiAdapter implements IProviderAdapter {
         for (const item of json.models) {
           const id = item.name || item.id || item.model;
           if (id) {
-            models.push({
-              id,
-              name: id,
-              description: item.details?.parameter_size ? `Size: ${item.details.parameter_size}` : undefined,
-              contextLength: item.details?.context_length || item.context_length || item.context_window,
-            });
+            const desc = item.details?.parameter_size ? `Size: ${item.details.parameter_size}` : undefined;
+            models.push(buildEnrichedModel(id, id, desc, item));
           }
         }
       } else if (Array.isArray(json)) {
@@ -69,11 +97,14 @@ export class OpenAiAdapter implements IProviderAdapter {
         for (const item of json) {
           const id = typeof item === 'string' ? item : item.id || item.name;
           if (id) {
-            models.push({
-              id,
-              name: id,
-              contextLength: typeof item === 'object' ? (item.context_length || item.context_window || item.max_model_len) : undefined,
-            });
+            models.push(
+              buildEnrichedModel(
+                id,
+                typeof item === 'object' ? item.name || id : id,
+                typeof item === 'object' ? item.description : undefined,
+                typeof item === 'object' ? item : undefined
+              )
+            );
           }
         }
       }
@@ -137,9 +168,19 @@ export class OpenAiAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
-    if (params.temperature !== undefined) body.temperature = params.temperature;
-    if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
-    if (params.topP !== undefined) body.top_p = params.topP;
+    const modelLimits = resolveModelLimits(params.model);
+
+    if (modelLimits.isReasoning) {
+      if (params.maxTokens !== undefined) {
+        body.max_completion_tokens = clampOutputTokens(params.maxTokens, modelLimits.maxOutputTokens);
+      }
+    } else {
+      if (params.temperature !== undefined) body.temperature = params.temperature;
+      if (params.maxTokens !== undefined) {
+        body.max_tokens = clampOutputTokens(params.maxTokens, modelLimits.maxOutputTokens);
+      }
+    }
+    if (params.topP !== undefined && !modelLimits.isReasoning) body.top_p = params.topP;
 
     const res = await fetch(url, {
       method: 'POST',
@@ -302,9 +343,19 @@ export class OpenAiAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
-    if (params.temperature !== undefined) body.temperature = params.temperature;
-    if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
-    if (params.topP !== undefined) body.top_p = params.topP;
+    const modelLimits = resolveModelLimits(params.model);
+
+    if (modelLimits.isReasoning) {
+      if (params.maxTokens !== undefined) {
+        body.max_completion_tokens = clampOutputTokens(params.maxTokens, modelLimits.maxOutputTokens);
+      }
+    } else {
+      if (params.temperature !== undefined) body.temperature = params.temperature;
+      if (params.maxTokens !== undefined) {
+        body.max_tokens = clampOutputTokens(params.maxTokens, modelLimits.maxOutputTokens);
+      }
+    }
+    if (params.topP !== undefined && !modelLimits.isReasoning) body.top_p = params.topP;
 
     const res = await fetch(url, {
       method: 'POST',

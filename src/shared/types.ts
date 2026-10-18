@@ -54,6 +54,8 @@ export interface ModelInfo {
   name: string;
   description?: string;
   contextLength?: number;
+  maxOutputTokens?: number;
+  defaultOutputTokens?: number;
   isCustom?: boolean;
 }
 

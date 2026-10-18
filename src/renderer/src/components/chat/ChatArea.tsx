@@ -5,6 +5,7 @@ import {
   Download,
   ChevronDown,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useProviderStore } from '../../store/useProviderStore';
@@ -13,12 +14,12 @@ import { MessageItem } from './MessageItem';
 import { MessageComposer } from './MessageComposer';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AttachmentModal } from './AttachmentModal';
-
-const formatTokensCompact = (tok: number): string => {
-  if (tok >= 1000000) return `${(tok / 1000000).toFixed(tok % 1000000 === 0 ? 0 : 1)}M`;
-  if (tok >= 1000) return `${(tok / 1000).toFixed(tok % 1000 === 0 ? 0 : 1)}K`;
-  return `${tok}`;
-};
+import {
+  resolveModelLimits,
+  getModelQuickTokenStops,
+  clampOutputTokens,
+  formatTokensCompact,
+} from '@shared/model-limits';
 
 export const ChatArea: React.FC = () => {
   const {
@@ -48,9 +49,41 @@ export const ChatArea: React.FC = () => {
   const currentModel =
     activeConversation?.modelId || activeProvider?.defaultModel || 'No Model Selected';
 
+  // Resolve capability and limit specs for current model
+  const activeModelInfo = models.find((m) => m.id === currentModel);
+  const activeLimits = resolveModelLimits(currentModel, {
+    contextLength: activeModelInfo?.contextLength,
+    maxOutputTokens: activeModelInfo?.maxOutputTokens,
+    defaultOutputTokens: activeModelInfo?.defaultOutputTokens,
+  });
+
+  const currentMaxTokens = clampOutputTokens(
+    activeConversation?.maxTokens ?? activeLimits.defaultOutputTokens,
+    activeLimits.maxOutputTokens
+  );
+
+  const quickTokenStops = getModelQuickTokenStops(activeLimits.maxOutputTokens);
+
   const handleSelectModel = (mId: string) => {
     if (activeConversation) {
-      updateConversation({ id: activeConversation.id, modelId: mId });
+      const targetModelInfo = models.find((m) => m.id === mId);
+      const targetLimits = resolveModelLimits(mId, {
+        contextLength: targetModelInfo?.contextLength,
+        maxOutputTokens: targetModelInfo?.maxOutputTokens,
+        defaultOutputTokens: targetModelInfo?.defaultOutputTokens,
+      });
+
+      // Auto-clamp or adjust maxTokens if existing maxTokens exceeds new model's limit
+      let adjustedMaxTokens = activeConversation.maxTokens;
+      if (adjustedMaxTokens && adjustedMaxTokens > targetLimits.maxOutputTokens) {
+        adjustedMaxTokens = targetLimits.maxOutputTokens;
+      }
+
+      updateConversation({
+        id: activeConversation.id,
+        modelId: mId,
+        maxTokens: adjustedMaxTokens,
+      });
     }
     setIsModelPickerOpen(false);
   };
@@ -58,14 +91,25 @@ export const ChatArea: React.FC = () => {
   const handleApplyCustomModel = (e: React.FormEvent) => {
     e.preventDefault();
     if (customModelInput.trim() && activeConversation) {
-      updateConversation({ id: activeConversation.id, modelId: customModelInput.trim() });
+      const customId = customModelInput.trim();
+      const targetLimits = resolveModelLimits(customId);
+      let adjustedMaxTokens = activeConversation.maxTokens;
+      if (adjustedMaxTokens && adjustedMaxTokens > targetLimits.maxOutputTokens) {
+        adjustedMaxTokens = targetLimits.maxOutputTokens;
+      }
+      updateConversation({
+        id: activeConversation.id,
+        modelId: customId,
+        maxTokens: adjustedMaxTokens,
+      });
       setCustomModelInput('');
       setIsModelPickerOpen(false);
     }
   };
 
   const filteredModels = models.filter((m) =>
-    m.id.toLowerCase().includes(modelSearch.toLowerCase())
+    m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
+    m.name?.toLowerCase().includes(modelSearch.toLowerCase())
   );
 
   return (
@@ -122,29 +166,44 @@ export const ChatArea: React.FC = () => {
 
               {/* Model list */}
               <div className="max-h-48 overflow-y-auto space-y-1 my-1">
-                {filteredModels.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => handleSelectModel(m.id)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center justify-between ${
-                      m.id === currentModel
-                        ? 'bg-secondary text-secondary-foreground font-semibold'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                    }`}
-                  >
-                    <span className="truncate font-mono text-[11px]">{m.name || m.id}</span>
-                    <div className="flex items-center space-x-1.5 shrink-0 ml-2">
-                      {m.contextLength ? (
-                        <span className="text-[10px] text-muted-foreground font-mono bg-background px-1.5 py-0.5 rounded border border-border">
-                          {formatTokensCompact(m.contextLength)} ctx
+                {filteredModels.map((m) => {
+                  const mLimits = resolveModelLimits(m.id, {
+                    contextLength: m.contextLength,
+                    maxOutputTokens: m.maxOutputTokens,
+                  });
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => handleSelectModel(m.id)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs transition-colors flex items-center justify-between ${
+                        m.id === currentModel
+                          ? 'bg-secondary text-secondary-foreground font-semibold'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                      }`}
+                    >
+                      <span className="truncate font-mono text-[11px]" title={m.name || m.id}>
+                        {m.name || m.id}
+                      </span>
+                      <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                        <span
+                          className="text-[10px] text-muted-foreground font-mono bg-background px-1.5 py-0.5 rounded border border-border"
+                          title={`Context Window (Input Tokens): ${mLimits.contextLength.toLocaleString()}`}
+                        >
+                          {formatTokensCompact(mLimits.contextLength)} in
                         </span>
-                      ) : null}
-                      {m.id === currentModel && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-foreground" />
-                      )}
-                    </div>
-                  </button>
-                ))}
+                        <span
+                          className="text-[10px] text-muted-foreground font-mono bg-background px-1.5 py-0.5 rounded border border-border"
+                          title={`Max Output Tokens: ${mLimits.maxOutputTokens.toLocaleString()}`}
+                        >
+                          {formatTokensCompact(mLimits.maxOutputTokens)} out
+                        </span>
+                        {m.id === currentModel && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-foreground" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
 
                 {filteredModels.length === 0 && (
                   <div className="text-center py-4 text-xs text-muted-foreground">
@@ -185,18 +244,40 @@ export const ChatArea: React.FC = () => {
             >
               <Sliders className="w-3.5 h-3.5" />
               <span className="font-mono text-[11px]">
-                T: {activeConversation?.temperature ?? 0.7} • {formatTokensCompact(activeConversation?.maxTokens ?? 4096)} tok
+                T: {activeLimits.isReasoning ? '1.0' : (activeConversation?.temperature ?? 0.7)} • {formatTokensCompact(currentMaxTokens)} tok
               </span>
             </button>
 
             {showTempSlider && (
-              <div className="absolute right-0 top-11 w-72 bg-popover text-popover-foreground border border-border rounded-xl p-3 shadow-xl z-40 animate-in fade-in duration-150 space-y-3">
+              <div className="absolute right-0 top-11 w-80 bg-popover text-popover-foreground border border-border rounded-xl p-3.5 shadow-xl z-40 animate-in fade-in duration-150 space-y-3">
+                {/* Active Model Specs Card */}
+                <div className="p-2.5 rounded-lg bg-secondary/50 border border-border space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                    <span className="truncate max-w-[190px]" title={currentModel}>
+                      {activeModelInfo?.name || currentModel}
+                    </span>
+                    {activeLimits.isReasoning && (
+                      <span className="text-[10px] bg-primary/20 text-primary border border-primary/30 px-1.5 py-0.5 rounded font-mono">
+                        Reasoning
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+                    <span className="bg-background px-1.5 py-0.5 rounded border border-border text-foreground" title="Input Context Window">
+                      {formatTokensCompact(activeLimits.contextLength)} context (in)
+                    </span>
+                    <span className="bg-background px-1.5 py-0.5 rounded border border-border text-foreground" title="Hardware / API Max Output Ceiling">
+                      {formatTokensCompact(activeLimits.maxOutputTokens)} max (out)
+                    </span>
+                  </div>
+                </div>
+
                 {/* Temperature */}
                 <div>
                   <div className="flex items-center justify-between text-xs text-foreground mb-1.5">
                     <span className="font-medium">Temperature</span>
                     <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-secondary border border-border">
-                      {activeConversation?.temperature ?? 0.7}
+                      {activeLimits.isReasoning ? '1.0 (Fixed)' : (activeConversation?.temperature ?? 0.7)}
                     </span>
                   </div>
                   <input
@@ -204,7 +285,8 @@ export const ChatArea: React.FC = () => {
                     min="0"
                     max="1.5"
                     step="0.05"
-                    value={activeConversation?.temperature ?? 0.7}
+                    disabled={activeLimits.isReasoning}
+                    value={activeLimits.isReasoning ? 1.0 : (activeConversation?.temperature ?? 0.7)}
                     onChange={(e) => {
                       if (activeConversation) {
                         updateConversation({
@@ -213,7 +295,7 @@ export const ChatArea: React.FC = () => {
                         });
                       }
                     }}
-                    className="w-full accent-foreground cursor-pointer"
+                    className={`w-full accent-foreground ${activeLimits.isReasoning ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                   />
                   <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5 font-mono">
                     <span>0.0 (Precise)</span>
@@ -221,32 +303,91 @@ export const ChatArea: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Max Output Tokens */}
-                <div className="pt-2.5 border-t border-border">
-                  <div className="flex items-center justify-between text-xs text-foreground mb-1.5">
+                {/* Max Output Tokens - Sliders & Inputs Adapted to Model Ceiling */}
+                <div className="pt-2.5 border-t border-border space-y-2">
+                  <div className="flex items-center justify-between text-xs text-foreground">
                     <span className="font-medium">Max Output Tokens</span>
                     <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-secondary border border-border">
-                      {formatTokensCompact(activeConversation?.maxTokens ?? 4096)} ({(activeConversation?.maxTokens ?? 4096).toLocaleString()})
+                      {formatTokensCompact(currentMaxTokens)} ({currentMaxTokens.toLocaleString()})
                     </span>
                   </div>
+
+                  {/* Range Slider dynamically bounded by model max output limit */}
                   <input
-                    type="number"
+                    type="range"
                     min="128"
-                    max="1048576"
-                    step="512"
-                    value={activeConversation?.maxTokens ?? 4096}
+                    max={activeLimits.maxOutputTokens}
+                    step={activeLimits.maxOutputTokens <= 4096 ? 128 : (activeLimits.maxOutputTokens <= 16384 ? 256 : 512)}
+                    value={currentMaxTokens}
                     onChange={(e) => {
                       if (activeConversation) {
                         updateConversation({
                           id: activeConversation.id,
-                          maxTokens: parseInt(e.target.value) || 4096,
+                          maxTokens: parseInt(e.target.value) || activeLimits.defaultOutputTokens,
                         });
                       }
                     }}
-                    className="w-full bg-background border border-border rounded-md px-2.5 py-1 text-xs text-foreground font-mono outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    className="w-full accent-foreground cursor-pointer"
                   />
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {[2048, 4096, 8192, 16384, 32768, 65536, 131072, 1048576].map((tok) => (
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                    <span>128</span>
+                    <span>Model Max: {formatTokensCompact(activeLimits.maxOutputTokens)}</span>
+                  </div>
+
+                  {/* Numeric Input */}
+                  <div className="flex items-center space-x-1.5">
+                    <input
+                      type="number"
+                      min="128"
+                      max={activeLimits.maxOutputTokens}
+                      step="256"
+                      value={currentMaxTokens}
+                      onChange={(e) => {
+                        if (activeConversation) {
+                          const val = parseInt(e.target.value);
+                          updateConversation({
+                            id: activeConversation.id,
+                            maxTokens: isNaN(val) ? activeLimits.defaultOutputTokens : clampOutputTokens(val, activeLimits.maxOutputTokens),
+                          });
+                        }
+                      }}
+                      className="flex-1 bg-background border border-border rounded-md px-2.5 py-1 text-xs text-foreground font-mono outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeConversation) {
+                          updateConversation({
+                            id: activeConversation.id,
+                            maxTokens: activeLimits.defaultOutputTokens,
+                          });
+                        }
+                      }}
+                      className="px-2 py-1 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-[10px] font-mono border border-border transition-colors"
+                      title="Reset to recommended model default"
+                    >
+                      Default
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeConversation) {
+                          updateConversation({
+                            id: activeConversation.id,
+                            maxTokens: activeLimits.maxOutputTokens,
+                          });
+                        }
+                      }}
+                      className="px-2 py-1 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-[10px] font-mono border border-border transition-colors"
+                      title="Set to model maximum output ceiling"
+                    >
+                      Max
+                    </button>
+                  </div>
+
+                  {/* Adaptive Quick Stops */}
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {quickTokenStops.map((tok) => (
                       <button
                         key={tok}
                         type="button"
@@ -256,7 +397,7 @@ export const ChatArea: React.FC = () => {
                           }
                         }}
                         className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
-                          (activeConversation?.maxTokens ?? 4096) === tok
+                          currentMaxTokens === tok
                             ? 'bg-primary text-primary-foreground border-primary font-semibold'
                             : 'bg-secondary text-muted-foreground hover:text-foreground border-border'
                         }`}

@@ -13,6 +13,7 @@ import {
   TokenUsage,
 } from '../../shared/types';
 import { createParser } from 'eventsource-parser';
+import { resolveModelLimits, clampOutputTokens } from '../../shared/model-limits';
 
 export class ResponsesAdapter implements IProviderAdapter {
   public async fetchModels(config: ProviderConfig): Promise<ModelInfo[]> {
@@ -25,10 +26,20 @@ export class ResponsesAdapter implements IProviderAdapter {
     }
     const json = await res.json();
     const list = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
-    return list.map((item: any) => ({
-      id: item.id || item.name,
-      name: item.id || item.name,
-    }));
+    return list.map((item: any) => {
+      const id = item.id || item.name;
+      const limits = resolveModelLimits(id, {
+        contextLength: item.context_length || item.context_window,
+        maxOutputTokens: item.max_output_tokens || item.max_completion_tokens,
+      });
+      return {
+        id,
+        name: item.name || id,
+        contextLength: limits.contextLength,
+        maxOutputTokens: limits.maxOutputTokens,
+        defaultOutputTokens: limits.defaultOutputTokens,
+      };
+    });
   }
 
   public async testConnection(config: ProviderConfig): Promise<ConnectionTestResult> {
@@ -71,8 +82,11 @@ export class ResponsesAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
+    const limits = resolveModelLimits(params.model);
     if (params.temperature !== undefined) body.temperature = params.temperature;
-    if (params.maxTokens !== undefined) body.max_output_tokens = params.maxTokens;
+    if (params.maxTokens !== undefined) {
+      body.max_output_tokens = clampOutputTokens(params.maxTokens, limits.maxOutputTokens);
+    }
 
     const res = await fetch(url, {
       method: 'POST',
@@ -156,6 +170,12 @@ export class ResponsesAdapter implements IProviderAdapter {
       stream: false,
       ...config.customBodyParams,
     };
+
+    const limits = resolveModelLimits(params.model);
+    if (params.temperature !== undefined) body.temperature = params.temperature;
+    if (params.maxTokens !== undefined) {
+      body.max_output_tokens = clampOutputTokens(params.maxTokens, limits.maxOutputTokens);
+    }
 
     const res = await fetch(url, {
       method: 'POST',

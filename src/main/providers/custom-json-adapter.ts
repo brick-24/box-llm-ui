@@ -13,6 +13,7 @@ import {
   TokenUsage,
 } from '../../shared/types';
 import { createParser } from 'eventsource-parser';
+import { resolveModelLimits } from '../../shared/model-limits';
 
 export function getByPath(obj: any, path: string): any {
   if (!obj || !path) return undefined;
@@ -47,7 +48,17 @@ export class CustomJsonAdapter implements IProviderAdapter {
 
     return list.map((item: any) => {
       const id = typeof item === 'string' ? item : item.id || item.name || item.model;
-      return { id, name: id };
+      const limits = resolveModelLimits(id, {
+        contextLength: typeof item === 'object' ? item.context_length || item.context_window : undefined,
+        maxOutputTokens: typeof item === 'object' ? item.max_output_tokens || item.max_tokens : undefined,
+      });
+      return {
+        id,
+        name: typeof item === 'object' ? item.name || id : id,
+        contextLength: limits.contextLength,
+        maxOutputTokens: limits.maxOutputTokens,
+        defaultOutputTokens: limits.defaultOutputTokens,
+      };
     });
   }
 

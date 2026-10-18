@@ -8,8 +8,10 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
+import { useProviderStore } from '../../store/useProviderStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { AttachmentChip } from './AttachmentChip';
+import { resolveModelLimits, formatTokensCompact } from '@shared/model-limits';
 
 export const MessageComposer: React.FC = () => {
   const {
@@ -173,13 +175,26 @@ export const MessageComposer: React.FC = () => {
     setIsProcessingFile(false);
   };
 
+  const { activeConversation } = useChatStore();
+  const { activeProvider, models } = useProviderStore();
+
+  const currentModelId =
+    activeConversation?.modelId || activeProvider?.defaultModel || '';
+  const currentModelInfo = models.find((m) => m.id === currentModelId);
+  const activeLimits = resolveModelLimits(currentModelId, {
+    contextLength: currentModelInfo?.contextLength,
+  });
+
   // Calculate estimated tokens from attachments
   const totalAttachmentTokens = attachments.reduce(
     (sum, a) => sum + (a.tokenEstimate || 0),
     0
   );
-  const contextLimit = settings.contextWarningLimit || 200000;
-  const isContextNearLimit = totalAttachmentTokens > contextLimit;
+
+  // Model-aware context ceiling (approaching at 85% or exceeding)
+  const effectiveContextLimit = activeLimits.contextLength || settings.contextWarningLimit || 128000;
+  const isContextNearLimit = totalAttachmentTokens > effectiveContextLimit * 0.85;
+  const isExceeded = totalAttachmentTokens > effectiveContextLimit;
 
   return (
     <div
@@ -200,10 +215,15 @@ export const MessageComposer: React.FC = () => {
       <div className="max-w-4xl mx-auto flex flex-col space-y-2">
         {/* Context Limit Warning */}
         {isContextNearLimit && (
-          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs text-foreground">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+          <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border text-xs transition-colors ${
+            isExceeded
+              ? 'bg-destructive/10 border-destructive/30 text-destructive'
+              : 'bg-secondary border-border text-foreground'
+          }`}>
+            <AlertTriangle className={`w-4 h-4 shrink-0 ${isExceeded ? 'text-destructive' : 'text-amber-500'}`} />
             <span>
-              Attached documents contain ~{totalAttachmentTokens.toLocaleString()} tokens, approaching your context warning limit ({contextLimit >= 1000000 ? `${(contextLimit / 1000000).toFixed(1)}M` : `${Math.round(contextLimit / 1000)}k`}).
+              Attached documents contain ~{totalAttachmentTokens.toLocaleString()} tokens,{' '}
+              {isExceeded ? 'exceeding' : 'approaching'} {currentModelId ? `${currentModelId}'s` : 'the'} context limit ({formatTokensCompact(effectiveContextLimit)}).
             </span>
           </div>
         )}

@@ -21,11 +21,9 @@ Defines the authoritative TypeScript interfaces and domain models:
 Contains immutable system defaults, initial providers, and starter prompts:
 - **`DEFAULT_PROVIDERS`**: Seed configurations for popular LLM endpoints:
   - **OpenAI**: `https://api.openai.com/v1` (GPT-4o)
-  - **Groq Cloud**: `https://api.groq.com/openai/v1` (Llama-3.3-70b-versatile)
-  - **OpenRouter**: `https://openrouter.ai/api/v1` (Claude-3.5-Sonnet)
+  - **OpenRouter**: `https://openrouter.ai/api/v1` (Gemini 2.5 Flash)
+  - **DeepSeek**: `https://api.deepseek.com` (DeepSeek-Chat)
   - **Ollama**: `http://localhost:11434/v1` (Local llama3)
-  - **LM Studio**: `http://localhost:1234/v1` (Local models)
-  - **Custom JSON API**: Configurable generic REST endpoint.
 - **`DEFAULT_APP_SETTINGS`**: Initial settings (`theme: 'system'`, `defaultMaxTokens: 4096`, `defaultTemperature: 0.7`, `fontSize: 'md'`, `contextWarningLimit: 200000` supporting up to 1M+ models).
 - **`STARTER_PROMPTS`**: Pre-configured cards for the Welcome Screen.
 

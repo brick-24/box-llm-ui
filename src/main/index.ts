@@ -130,6 +130,35 @@ async function initServices() {
       db.saveProvider(p);
     }
     DiagnosticsService.log('info', 'storage', 'Initialized default provider presets');
+  } else {
+    // Clean up removed default presets if they were seeded and unconfigured
+    const defaultRemovedNames = ['Custom JSON API', 'LM Studio (Local)', 'Groq Cloud'];
+    const allProviders = db.getProviders();
+    const deletedProviderIds = new Set<string>();
+
+    for (const prov of allProviders) {
+      if (defaultRemovedNames.includes(prov.name) && !prov.apiKey) {
+        db.deleteProvider(prov.id);
+        deletedProviderIds.add(prov.id);
+        DiagnosticsService.log('info', 'storage', `Cleaned up removed default provider: ${prov.name}`);
+      }
+    }
+
+    if (deletedProviderIds.size > 0) {
+      const remainingProviders = db.getProviders();
+      const fallbackProvider = remainingProviders[0];
+      if (fallbackProvider) {
+        for (const conv of db.getConversations()) {
+          if (deletedProviderIds.has(conv.providerId)) {
+            db.updateConversation({
+              id: conv.id,
+              providerId: fallbackProvider.id,
+              modelId: fallbackProvider.defaultModel || '',
+            });
+          }
+        }
+      }
+    }
   }
 
   // Create default initial conversation if none exist

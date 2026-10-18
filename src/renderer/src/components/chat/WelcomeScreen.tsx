@@ -81,7 +81,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectPrompt }) 
                 API Connection Required
               </h3>
               <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-                Connect your OpenAI API key or point to local Ollama / LM Studio to begin chatting.
+                Connect your OpenAI / OpenRouter API key or point to local Ollama to begin chatting.
               </p>
               <button
                 onClick={() => openSettings('providers')}

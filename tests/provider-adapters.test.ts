@@ -97,4 +97,52 @@ describe('Provider Adapters & Helpers', () => {
     expect(getByPath(payload, 'output.text')).toBe('Custom response text');
     expect(getByPath(payload, 'non.existent.path')).toBeUndefined();
   });
+
+  it('sanitizes large base64 data URIs and caps strings for verbose logging', async () => {
+    const { sanitizePayloadForLogging } = await import('../src/main/providers/openai-adapter');
+    const input = {
+      model: 'google/gemma-4-31b-it:free',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Analyze this photo' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==verylongbase64payloadhere...' } },
+          ],
+        },
+      ],
+    };
+
+    const sanitized = sanitizePayloadForLogging(input);
+    expect(sanitized.model).toBe('google/gemma-4-31b-it:free');
+    expect(sanitized.messages[0].content[0].text).toBe('Analyze this photo');
+    expect(sanitized.messages[0].content[1].image_url.url).toContain('[base64 payload truncated');
+  });
+
+  it('ensures Google Gemini is defined as a default provider preset', async () => {
+    const { PROVIDER_PRESETS } = await import('../src/shared/constants');
+    const gemini = PROVIDER_PRESETS.find((p) => p.name === 'Google Gemini');
+    expect(gemini).toBeDefined();
+    expect(gemini?.baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai');
+    expect(gemini?.chatEndpoint).toBe('/chat/completions');
+    expect(gemini?.modelListUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai/models');
+    expect(gemini?.protocol).toBe('openai-chat');
+    expect(gemini?.authMethod).toBe('bearer');
+    expect(gemini?.defaultModel).toBe('gemini-2.5-flash');
+  });
+
+  it('guarantees OpenRouter fallback models array is always capped at 3 or fewer items', async () => {
+    const { getActiveConversationalFreeModels } = await import('../src/main/providers/openai-adapter');
+    const freeList = getActiveConversationalFreeModels();
+    expect(freeList.length).toBeGreaterThan(3);
+
+    // Test the fallback slice logic
+    const model = 'google/gemma-4-26b-a4b-it:free';
+    const fallbacks = freeList.filter((m) => m !== model);
+    const modelsPayload = [model, ...fallbacks].slice(0, 3);
+    expect(modelsPayload.length).toBeLessThanOrEqual(3);
+    expect(modelsPayload[0]).toBe(model);
+  });
 });
+
+

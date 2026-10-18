@@ -57,6 +57,9 @@ export function createSseStreamParser(options: ParseOptions) {
         if (deltaContent === undefined && (choice.delta?.reasoning_content || choice.message?.reasoning_content)) {
           deltaContent = choice.delta?.reasoning_content || choice.message?.reasoning_content;
         }
+        if (deltaContent === undefined && (choice.delta?.reasoning || choice.message?.reasoning || choice.delta?.thought)) {
+          deltaContent = choice.delta?.reasoning || choice.message?.reasoning || choice.delta?.thought;
+        }
 
         if (typeof deltaContent === 'string' && deltaContent.length > 0) {
           fullText += deltaContent;

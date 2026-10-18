@@ -34,6 +34,16 @@ export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [
     defaultModel: 'google/gemini-2.5-flash',
   },
   {
+    name: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    chatEndpoint: '/chat/completions',
+    modelListUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+    protocol: 'openai-chat',
+    authMethod: 'bearer',
+    streamingEnabled: true,
+    defaultModel: 'gemini-2.5-flash',
+  },
+  {
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     chatEndpoint: '/chat/completions',

@@ -10,6 +10,14 @@ import {
   MessageAttachment,
   TokenUsage,
 } from '../../shared/types';
+import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
+
+export function isSafetyClassifierVerdict(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (trimmed.length > 250) return false;
+  return /^User Safety:\s*(safe|unsafe)[\s\S]*Response Safety:\s*(safe|unsafe)/i.test(trimmed);
+}
 
 export interface SendMessageOptions {
   conversationId: string;
@@ -99,8 +107,8 @@ export class ChatEngine {
       apiKey: this.creds.decrypt(rawConfig.apiKey),
     };
 
-    const model = options.modelId || conv.modelId || config.defaultModel;
-    if (!model) {
+    let currentModel = options.modelId || conv.modelId || config.defaultModel;
+    if (!currentModel) {
       const errMsg = 'No model selected. Please select a model or enter a model ID.';
       DiagnosticsService.log('error', 'api', errMsg);
       if (win) {
@@ -152,13 +160,6 @@ export class ChatEngine {
     const adapter = AdapterFactory.getAdapter(config.protocol);
     const startTime = Date.now();
 
-    DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${model})`, {
-      endpoint: config.chatEndpoint,
-      protocol: config.protocol,
-      messageCount: history.length,
-      streaming: config.streamingEnabled,
-    });
-
     const maxRetries = config.maxRetries ?? 2;
     let attempt = 0;
     let success = false;
@@ -169,13 +170,25 @@ export class ChatEngine {
     while (attempt <= maxRetries && !success) {
       if (controller.signal.aborted) break;
 
+      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}]`, {
+        endpoint: config.chatEndpoint,
+        protocol: config.protocol,
+        model: currentModel,
+        messageCount: history.length,
+        streaming: config.streamingEnabled,
+        messagesPreview: history.slice(-3).map((m) => ({
+          role: m.role,
+          content: m.content.length > 300 ? `${m.content.slice(0, 300)}...` : m.content,
+        })),
+      });
+
       try {
         if (config.streamingEnabled) {
           await adapter.streamMessage(
             config,
             {
               messages: history,
-              model,
+              model: currentModel,
               systemPrompt: options.systemPrompt || conv.systemPrompt,
               temperature: options.temperature ?? conv.temperature,
               maxTokens: options.maxTokens ?? conv.maxTokens,
@@ -218,9 +231,11 @@ export class ChatEngine {
                 }
 
                 DiagnosticsService.log('info', 'api', `Response complete (${latencyMs}ms)`, {
+                  model: currentModel,
                   finishReason,
                   tokenUsage,
                   textLength: fullText.length,
+                  responsePreview: fullText.length > 1000 ? `${fullText.slice(0, 1000)}...` : fullText,
                 });
               },
               onError: (err) => {
@@ -235,7 +250,7 @@ export class ChatEngine {
             config,
             {
               messages: history,
-              model,
+              model: currentModel,
               systemPrompt: options.systemPrompt || conv.systemPrompt,
               temperature: options.temperature ?? conv.temperature,
               maxTokens: options.maxTokens ?? conv.maxTokens,
@@ -271,6 +286,44 @@ export class ChatEngine {
               latencyMs,
               finishReason: 'stop',
             });
+          }
+
+          DiagnosticsService.log('info', 'api', `Response complete (${latencyMs}ms)`, {
+            model: currentModel,
+            finishReason: 'stop',
+            tokenUsage: resp.tokenUsage,
+            textLength: resp.content.length,
+            responsePreview: resp.content.length > 1000 ? `${resp.content.slice(0, 1000)}...` : resp.content,
+          });
+        }
+
+        // Check if the upstream provider misrouted to a safety evaluation classifier
+        if (isSafetyClassifierVerdict(finalFullText)) {
+          DiagnosticsService.log(
+            'warn',
+            'api',
+            `Detected upstream content-safety classifier verdict ("${finalFullText.trim()}") instead of assistant response. Re-routing request to fallback conversational model...`,
+            {
+              verdict: finalFullText.trim(),
+              previousModel: currentModel,
+              attempt: attempt + 1,
+            }
+          );
+
+          if (attempt < maxRetries) {
+            attempt++;
+            const freeModels = OPENROUTER_CONVERSATIONAL_FREE_MODELS.filter((m) => m !== currentModel);
+            currentModel = freeModels[(attempt - 1) % freeModels.length] || 'google/gemma-4-31b-it:free';
+
+            if (win && !controller.signal.aborted) {
+              win.webContents.send('chat:stream-chunk', {
+                conversationId,
+                messageId: assistantMsgId,
+                delta: '',
+                fullText: '',
+              });
+            }
+            continue;
           }
         }
 

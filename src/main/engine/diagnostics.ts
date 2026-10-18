@@ -57,12 +57,27 @@ export class DiagnosticsService {
       this.db.addDiagnostic(logItem);
     }
 
+    const prefix = `[Diagnostics][${category.toUpperCase()}] ${message}`;
+    const safeDetails = logItem.details;
+
     if (level === 'error') {
-      console.error(`[Diagnostics][${category.toUpperCase()}] ${message}`, logItem.details || '');
+      if (safeDetails && Object.keys(safeDetails).length > 0) {
+        console.error(prefix, '\n' + JSON.stringify(safeDetails, null, 2));
+      } else {
+        console.error(prefix);
+      }
     } else if (level === 'warn') {
-      console.warn(`[Diagnostics][${category.toUpperCase()}] ${message}`, logItem.details || '');
+      if (safeDetails && Object.keys(safeDetails).length > 0) {
+        console.warn(prefix, '\n' + JSON.stringify(safeDetails, null, 2));
+      } else {
+        console.warn(prefix);
+      }
     } else {
-      console.log(`[Diagnostics][${category.toUpperCase()}] ${message}`);
+      if (safeDetails && Object.keys(safeDetails).length > 0) {
+        console.log(prefix, '\n' + JSON.stringify(safeDetails, null, 2));
+      } else {
+        console.log(prefix);
+      }
     }
 
     return logItem;

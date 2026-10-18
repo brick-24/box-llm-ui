@@ -159,6 +159,36 @@ async function initServices() {
         }
       }
     }
+
+    // Ensure Google Gemini default provider exists
+    const currentProviders = db.getProviders();
+    const hasGemini = currentProviders.some(
+      (p) => p.name.toLowerCase().includes('gemini') || p.baseUrl.includes('generativelanguage.googleapis.com')
+    );
+    if (!hasGemini) {
+      const geminiPreset = PROVIDER_PRESETS.find((p) => p.name === 'Google Gemini');
+      if (geminiPreset) {
+        db.saveProvider({
+          id: crypto.randomUUID(),
+          name: geminiPreset.name || 'Google Gemini',
+          baseUrl: geminiPreset.baseUrl || 'https://generativelanguage.googleapis.com/v1beta/openai',
+          chatEndpoint: geminiPreset.chatEndpoint || '/chat/completions',
+          apiKey: '',
+          modelListUrl: geminiPreset.modelListUrl || '/models',
+          defaultModel: geminiPreset.defaultModel || 'gemini-2.5-flash',
+          protocol: geminiPreset.protocol || 'openai-chat',
+          authMethod: geminiPreset.authMethod || 'bearer',
+          customHeaders: geminiPreset.customHeaders || {},
+          customBodyParams: geminiPreset.customBodyParams || {},
+          requestTimeout: 60000,
+          maxRetries: 2,
+          streamingEnabled: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        DiagnosticsService.log('info', 'storage', 'Added Google Gemini as default provider');
+      }
+    }
   }
 
   // Create default initial conversation if none exist

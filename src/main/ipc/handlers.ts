@@ -106,7 +106,6 @@ export function registerIpcHandlers(
     };
 
     const adapter = AdapterFactory.getAdapter(fullConfig.protocol);
-    DiagnosticsService.log('info', 'api', `Fetching models from ${fullConfig.modelListUrl || fullConfig.baseUrl}`);
     return await adapter.fetchModels(fullConfig);
   });
 

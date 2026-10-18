@@ -16,7 +16,26 @@ interface ModelPatternRule {
   specs: ModelLimitSpecs;
 }
 
+export const OPENROUTER_CONVERSATIONAL_FREE_MODELS = [
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'cohere/north-mini-code:free',
+  'liquid/lfm-2.5-2.6b:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'qwen/qwen-2.5-coder-32b-instruct:free',
+  'mistralai/mistral-small-24b-instruct-2501:free',
+];
+
 const MODEL_RULES: ModelPatternRule[] = [
+  // --- OpenRouter Free Router ---
+  {
+    pattern: /^openrouter\/free$/i,
+    specs: { contextLength: 128000, maxOutputTokens: 8192, defaultOutputTokens: 4096 },
+  },
+
   // --- OpenAI Reasoning Models ---
   {
     pattern: /^o3-mini/i,

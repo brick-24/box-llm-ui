@@ -41,13 +41,16 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         const activeId = get().activeProviderId || (list.length > 0 ? list[0].id : null);
         const active = list.find((p) => p.id === activeId) || list[0] || null;
 
+        const currentActiveId = get().activeProviderId;
+        const currentModels = get().models;
+
         set({
           providers: list,
           activeProviderId: active ? active.id : null,
           activeProvider: active,
         });
 
-        if (active) {
+        if (active && (!currentModels || currentModels.length === 0 || currentActiveId !== active.id)) {
           get().fetchModelsForProvider(active);
         }
       }
@@ -57,7 +60,9 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   setActiveProvider: (id: string) => {
+    const currentActiveId = get().activeProviderId;
     const found = get().providers.find((p) => p.id === id) || null;
+    if (currentActiveId === id && get().models.length > 0) return;
     set({ activeProviderId: id, activeProvider: found, models: [] });
     if (found) {
       get().fetchModelsForProvider(found);
@@ -99,6 +104,9 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   fetchModelsForProvider: async (config: ProviderConfig) => {
+    if (get().isLoadingModels) {
+      return get().models;
+    }
     set({ isLoadingModels: true, modelsError: null });
     try {
       if (window.electronAPI) {
@@ -106,6 +114,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         set({ models: fetched, isLoadingModels: false });
         return fetched;
       }
+      set({ isLoadingModels: false });
       return [];
     } catch (e: any) {
       set({ modelsError: e.message || 'Failed to fetch models', isLoadingModels: false });

@@ -13,12 +13,54 @@ import {
   TokenUsage,
 } from '../../shared/types';
 import { createSseStreamParser } from '../engine/stream-parser';
-import { resolveModelLimits, clampOutputTokens } from '../../shared/model-limits';
+import {
+  resolveModelLimits,
+  clampOutputTokens,
+  OPENROUTER_CONVERSATIONAL_FREE_MODELS,
+} from '../../shared/model-limits';
+import { DiagnosticsService } from '../engine/diagnostics';
+
+export function sanitizePayloadForLogging(payload: any): any {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) {
+    return payload.map((item) => sanitizePayloadForLogging(item));
+  }
+  const copy: Record<string, any> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value === 'string') {
+      if (value.startsWith('data:') && value.includes(';base64,')) {
+        const prefix = value.slice(0, value.indexOf(';base64,') + 8);
+        copy[key] = `${prefix}[base64 payload truncated (${value.length} chars)]`;
+      } else if (value.length > 2500) {
+        copy[key] = `${value.slice(0, 2500)}... [truncated, total ${value.length} chars]`;
+      } else {
+        copy[key] = value;
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      copy[key] = sanitizePayloadForLogging(value);
+    } else {
+      copy[key] = value;
+    }
+  }
+  return copy;
+}
+
+let discoveredFreeModels: string[] = [];
+
+export function getActiveConversationalFreeModels(): string[] {
+  return discoveredFreeModels.length > 0 ? discoveredFreeModels : OPENROUTER_CONVERSATIONAL_FREE_MODELS;
+}
 
 export class OpenAiAdapter implements IProviderAdapter {
   public async fetchModels(config: ProviderConfig): Promise<ModelInfo[]> {
     const url = resolveEndpoint(config.baseUrl, config.modelListUrl || '/models');
     const headers = buildAuthHeaders(config, true);
+
+    DiagnosticsService.log('info', 'api', `[API Request] GET ${url} (fetching model catalog)`, {
+      url,
+      method: 'GET',
+      headers: DiagnosticsService.redactSecrets(headers),
+    });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), config.requestTimeout || 15000);
@@ -34,6 +76,12 @@ export class OpenAiAdapter implements IProviderAdapter {
 
       if (!res.ok) {
         const errText = await res.text();
+        DiagnosticsService.log('error', 'api', `[API Response Error] HTTP ${res.status} fetching models from ${url}`, {
+          url,
+          status: res.status,
+          statusText: res.statusText,
+          error: errText.slice(0, 500),
+        });
         throw new Error(`HTTP ${res.status} (${res.statusText}): ${errText.slice(0, 300)}`);
       }
 
@@ -46,6 +94,7 @@ export class OpenAiAdapter implements IProviderAdapter {
         description?: string,
         rawItem?: any
       ): ModelInfo => {
+        const cleanId = id.startsWith('models/') ? id.replace(/^models\//, '') : id;
         const rawCtx =
           rawItem?.context_length ??
           rawItem?.context_window ??
@@ -60,14 +109,14 @@ export class OpenAiAdapter implements IProviderAdapter {
           rawItem?.max_completion_tokens ??
           rawItem?.max_tokens;
 
-        const limits = resolveModelLimits(id, {
+        const limits = resolveModelLimits(cleanId, {
           contextLength: typeof rawCtx === 'number' && rawCtx > 0 ? rawCtx : undefined,
           maxOutputTokens: typeof rawMaxOutput === 'number' && rawMaxOutput > 0 ? rawMaxOutput : undefined,
         });
 
         return {
-          id,
-          name: displayName || id,
+          id: cleanId,
+          name: displayName || cleanId,
           description,
           contextLength: limits.contextLength,
           maxOutputTokens: limits.maxOutputTokens,
@@ -84,12 +133,12 @@ export class OpenAiAdapter implements IProviderAdapter {
           }
         }
       } else if (Array.isArray(json.models)) {
-        // Case 2: Ollama style { models: [ { name: "llama3:latest", details: ... } ] }
+        // Case 2: Ollama / Gemini style { models: [ { name: "llama3:latest", details: ... } ] }
         for (const item of json.models) {
           const id = item.name || item.id || item.model;
           if (id) {
-            const desc = item.details?.parameter_size ? `Size: ${item.details.parameter_size}` : undefined;
-            models.push(buildEnrichedModel(id, id, desc, item));
+            const desc = item.description || (item.details?.parameter_size ? `Size: ${item.details.parameter_size}` : undefined);
+            models.push(buildEnrichedModel(id, item.displayName || id, desc, item));
           }
         }
       } else if (Array.isArray(json)) {
@@ -109,9 +158,43 @@ export class OpenAiAdapter implements IProviderAdapter {
         }
       }
 
+      // Filter out non-conversational content safety / guardrail / embedding / image models
+      const conversationalModels = models.filter((m) => {
+        const idLower = m.id.toLowerCase();
+        const isExcluded =
+          idLower.includes('content-safety') ||
+          idLower.includes('llama-guard') ||
+          idLower.includes('safeguard') ||
+          idLower.includes('moderation') ||
+          idLower.includes('embedding') ||
+          idLower.includes('imagen') ||
+          idLower.includes('aqa') ||
+          idLower.includes('tts') ||
+          (m.description && /safety classifier|content moderation|guardrail/i.test(m.description));
+        return !isExcluded;
+      });
+
+      // If fetching from OpenRouter, dynamically populate active free conversational models
+      if (config.baseUrl.includes('openrouter.ai') || url.includes('openrouter.ai')) {
+        const liveFree = conversationalModels
+          .filter((m) => m.id.endsWith(':free'))
+          .map((m) => m.id);
+        if (liveFree.length > 0) {
+          discoveredFreeModels = liveFree;
+        }
+      }
+
+      DiagnosticsService.log('info', 'api', `[API Response] Retrieved ${conversationalModels.length} models from ${config.name}`, {
+        url,
+        status: res.status,
+        modelCount: conversationalModels.length,
+        discoveredFreeModels: discoveredFreeModels.length > 0 ? discoveredFreeModels : undefined,
+        sampleModels: conversationalModels.slice(0, 8).map((m) => m.id),
+      });
+
       // Sort models alphabetically
-      models.sort((a, b) => a.id.localeCompare(b.id));
-      return models;
+      conversationalModels.sort((a, b) => a.id.localeCompare(b.id));
+      return conversationalModels;
     } catch (err: any) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
@@ -126,6 +209,11 @@ export class OpenAiAdapter implements IProviderAdapter {
     try {
       const models = await this.fetchModels(config);
       const latencyMs = Date.now() - startTime;
+      DiagnosticsService.log('info', 'api', `[Connection Test] Successful for ${config.name} (${latencyMs}ms)`, {
+        provider: config.name,
+        latencyMs,
+        modelCount: models.length,
+      });
       return {
         success: true,
         message: `Successfully connected! Retrieved ${models.length} available models.`,
@@ -137,6 +225,11 @@ export class OpenAiAdapter implements IProviderAdapter {
       };
     } catch (err: any) {
       const latencyMs = Date.now() - startTime;
+      DiagnosticsService.log('warn', 'api', `[Connection Test] Failed for ${config.name} (${latencyMs}ms): ${err.message}`, {
+        provider: config.name,
+        latencyMs,
+        error: err.message,
+      });
       return {
         success: false,
         message: err.message || 'Connection test failed',
@@ -154,6 +247,12 @@ export class OpenAiAdapter implements IProviderAdapter {
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint || '/chat/completions');
     const headers = buildAuthHeaders(config);
 
+    const isOpenRouter = config.baseUrl.includes('openrouter.ai') || url.includes('openrouter.ai');
+    if (isOpenRouter) {
+      if (!headers['HTTP-Referer']) headers['HTTP-Referer'] = 'https://github.com/universal-llm-box';
+      if (!headers['X-Title']) headers['X-Title'] = 'Box AI Client';
+    }
+
     const formattedMessages = formatMessagesWithAttachments(
       params.messages,
       params.systemPrompt,
@@ -168,7 +267,22 @@ export class OpenAiAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
-    const modelLimits = resolveModelLimits(params.model);
+    if (isOpenRouter) {
+      const freeList = getActiveConversationalFreeModels();
+      if (params.model === 'openrouter/free') {
+        body.model = freeList[0];
+        body.models = freeList.slice(0, 3);
+      } else if (params.model.endsWith(':free')) {
+        const fallbacks = freeList.filter((m) => m !== params.model);
+        body.models = [params.model, ...fallbacks].slice(0, 3);
+      }
+    }
+
+    if (Array.isArray(body.models) && body.models.length > 3) {
+      body.models = body.models.slice(0, 3);
+    }
+
+    const modelLimits = resolveModelLimits(body.model || params.model);
 
     if (modelLimits.isReasoning) {
       if (params.maxTokens !== undefined) {
@@ -181,6 +295,21 @@ export class OpenAiAdapter implements IProviderAdapter {
       }
     }
     if (params.topP !== undefined && !modelLimits.isReasoning) body.top_p = params.topP;
+
+    DiagnosticsService.log('info', 'api', `[API Request] POST ${url} (${body.model || params.model}) [Stream]`, {
+      url,
+      method: 'POST',
+      requestedModel: params.model,
+      activeModel: body.model,
+      fallbackModels: body.models,
+      stream: true,
+      maxTokens: body.max_tokens ?? body.max_completion_tokens,
+      temperature: body.temperature,
+      topP: body.top_p,
+      messageCount: formattedMessages.length,
+      messages: sanitizePayloadForLogging(formattedMessages),
+      headers: DiagnosticsService.redactSecrets(headers),
+    });
 
     const res = await fetch(url, {
       method: 'POST',
@@ -202,12 +331,43 @@ export class OpenAiAdapter implements IProviderAdapter {
           parsedErr = j.detail;
         }
       } catch {}
+
+      DiagnosticsService.log('error', 'api', `[API Response Error] HTTP ${res.status} from ${url}: ${parsedErr}`, {
+        url,
+        status: res.status,
+        statusText: res.statusText,
+        error: parsedErr,
+        model: body.model || params.model,
+      });
       throw new Error(`API Error ${res.status}: ${parsedErr}`);
     }
 
     if (!res.body) {
       throw new Error('Response body is empty, cannot read stream.');
     }
+
+    DiagnosticsService.log('info', 'api', `[API Response Headers] HTTP ${res.status} ${res.statusText}`, {
+      url,
+      status: res.status,
+      statusText: res.statusText,
+      contentType: res.headers.get('content-type') || undefined,
+      rateLimitRemaining: res.headers.get('x-ratelimit-remaining-requests') || res.headers.get('x-ratelimit-remaining') || undefined,
+    });
+
+    const handleStreamComplete = (
+      fullText: string,
+      usage?: TokenUsage,
+      finishReason?: string
+    ) => {
+      DiagnosticsService.log('info', 'api', `[API Response Body] Stream complete (${fullText.length} chars)`, {
+        model: body.model || params.model,
+        finishReason: finishReason || 'stop',
+        tokenUsage: usage,
+        textLength: fullText.length,
+        receivedContent: fullText,
+      });
+      callbacks.onEnd(fullText, usage, finishReason);
+    };
 
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
@@ -239,7 +399,7 @@ export class OpenAiAdapter implements IProviderAdapter {
 
       const finishReason = choice?.finish_reason || 'stop';
       callbacks.onChunk(content, content);
-      callbacks.onEnd(content, usage, finishReason);
+      handleStreamComplete(content, usage, finishReason);
       return;
     }
 
@@ -253,7 +413,7 @@ export class OpenAiAdapter implements IProviderAdapter {
       },
       onDone: (fullText, usage, finishReason) => {
         streamCompleted = true;
-        callbacks.onEnd(fullText, usage, finishReason);
+        handleStreamComplete(fullText, usage, finishReason);
       },
       onError: (err) => {
         callbacks.onError(err);
@@ -306,7 +466,7 @@ export class OpenAiAdapter implements IProviderAdapter {
           }
         }
 
-        callbacks.onEnd(full, usage, finish);
+        handleStreamComplete(full, usage, finish);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -330,6 +490,12 @@ export class OpenAiAdapter implements IProviderAdapter {
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint || '/chat/completions');
     const headers = buildAuthHeaders(config);
 
+    const isOpenRouter = config.baseUrl.includes('openrouter.ai') || url.includes('openrouter.ai');
+    if (isOpenRouter) {
+      if (!headers['HTTP-Referer']) headers['HTTP-Referer'] = 'https://github.com/universal-llm-box';
+      if (!headers['X-Title']) headers['X-Title'] = 'Box AI Client';
+    }
+
     const formattedMessages = formatMessagesWithAttachments(
       params.messages,
       params.systemPrompt,
@@ -343,7 +509,22 @@ export class OpenAiAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
-    const modelLimits = resolveModelLimits(params.model);
+    if (isOpenRouter) {
+      const freeList = getActiveConversationalFreeModels();
+      if (params.model === 'openrouter/free') {
+        body.model = freeList[0];
+        body.models = freeList.slice(0, 3);
+      } else if (params.model.endsWith(':free')) {
+        const fallbacks = freeList.filter((m) => m !== params.model);
+        body.models = [params.model, ...fallbacks].slice(0, 3);
+      }
+    }
+
+    if (Array.isArray(body.models) && body.models.length > 3) {
+      body.models = body.models.slice(0, 3);
+    }
+
+    const modelLimits = resolveModelLimits(body.model || params.model);
 
     if (modelLimits.isReasoning) {
       if (params.maxTokens !== undefined) {
@@ -356,6 +537,21 @@ export class OpenAiAdapter implements IProviderAdapter {
       }
     }
     if (params.topP !== undefined && !modelLimits.isReasoning) body.top_p = params.topP;
+
+    DiagnosticsService.log('info', 'api', `[API Request] POST ${url} (${body.model || params.model}) [Sync]`, {
+      url,
+      method: 'POST',
+      requestedModel: params.model,
+      activeModel: body.model,
+      fallbackModels: body.models,
+      stream: false,
+      maxTokens: body.max_tokens ?? body.max_completion_tokens,
+      temperature: body.temperature,
+      topP: body.top_p,
+      messageCount: formattedMessages.length,
+      messages: sanitizePayloadForLogging(formattedMessages),
+      headers: DiagnosticsService.redactSecrets(headers),
+    });
 
     const res = await fetch(url, {
       method: 'POST',
@@ -377,6 +573,14 @@ export class OpenAiAdapter implements IProviderAdapter {
           parsed = j.detail;
         }
       } catch {}
+
+      DiagnosticsService.log('error', 'api', `[API Response Error] HTTP ${res.status} from ${url}: ${parsed}`, {
+        url,
+        status: res.status,
+        statusText: res.statusText,
+        error: parsed,
+        model: body.model || params.model,
+      });
       throw new Error(`API Error ${res.status}: ${parsed}`);
     }
 
@@ -387,6 +591,13 @@ export class OpenAiAdapter implements IProviderAdapter {
       completionTokens: json.usage.completion_tokens,
       totalTokens: json.usage.total_tokens,
     } : undefined;
+
+    DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars)`, {
+      model: body.model || params.model,
+      tokenUsage,
+      textLength: content.length,
+      receivedContent: content,
+    });
 
     return { content, tokenUsage };
   }

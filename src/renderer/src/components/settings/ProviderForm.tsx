@@ -18,6 +18,27 @@ import { ProviderConfig, ApiProtocol, AuthMethod } from '@shared/types';
 import { PROVIDER_PRESETS } from '@shared/constants';
 import { useProviderStore } from '../../store/useProviderStore';
 
+const PRESET_RECOMMENDED_MODELS: Record<string, string[]> = {
+  'Google Gemini': [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-thinking-exp',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+  ],
+  'OpenAI': ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1'],
+  'OpenRouter (1M+ Models)': [
+    'openrouter/free',
+    'google/gemini-2.5-flash',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'qwen/qwen-2.5-coder-32b-instruct:free',
+    'deepseek/deepseek-chat',
+  ],
+  'DeepSeek': ['deepseek-chat', 'deepseek-reasoner'],
+  'Ollama (Local)': ['llama3:latest', 'mistral', 'qwen2.5:latest', 'deepseek-r1:latest'],
+};
+
 interface ProviderFormProps {
   initialConfig?: Partial<ProviderConfig>;
   onSaved: () => void;
@@ -256,7 +277,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                 type={showKey ? 'text' : 'password'}
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-                placeholder="sk-..."
+                placeholder={form.baseUrl.includes('googleapis.com') ? 'AIzaSy...' : 'sk-...'}
                 className="w-full bg-card border border-border rounded-md pl-3 pr-9 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
               />
               <button
@@ -268,6 +289,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                 {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
+            {form.baseUrl.includes('generativelanguage.googleapis.com') && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Enter your Gemini API key from <span className="text-foreground font-medium">Google AI Studio</span> (starts with AIzaSy...).
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -296,11 +322,49 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               type="text"
               value={form.defaultModel}
               onChange={(e) => setForm({ ...form, defaultModel: e.target.value })}
-              placeholder="e.g. gpt-4o or llama3"
+              placeholder="e.g. gemini-2.5-flash or gpt-4o"
               className="w-full bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring font-mono text-[11px]"
             />
           </div>
         </div>
+
+        {/* Quick Model Recommendations */}
+        {(() => {
+          const isGemini =
+            form.name.toLowerCase().includes('gemini') ||
+            form.baseUrl.includes('generativelanguage.googleapis.com');
+          const matchedKey = Object.keys(PRESET_RECOMMENDED_MODELS).find(
+            (k) =>
+              (isGemini && k === 'Google Gemini') ||
+              form.name.toLowerCase().includes(k.toLowerCase().split(' ')[0])
+          );
+          const quickList = matchedKey ? PRESET_RECOMMENDED_MODELS[matchedKey] : undefined;
+          if (!quickList || quickList.length === 0) return null;
+
+          return (
+            <div className="p-2.5 bg-secondary/20 rounded-lg border border-border">
+              <span className="text-[10px] text-muted-foreground block mb-1.5 font-semibold uppercase tracking-wider">
+                Recommended Models for {matchedKey}: Click to select
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {quickList.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setForm({ ...form, defaultModel: m })}
+                    className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                      form.defaultModel === m
+                        ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                        : 'bg-secondary text-secondary-foreground hover:bg-accent border border-border'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Fetch Models & Test Connection actions */}
         <div className="flex flex-wrap items-center gap-2 pt-1">

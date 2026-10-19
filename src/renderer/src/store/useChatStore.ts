@@ -368,8 +368,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const provStore = useProviderStore.getState();
     const settingsStore = useSettingsStore.getState();
 
-    const providerId = currentConv?.providerId || provStore.activeProviderId || undefined;
+    const providerId = provStore.activeProviderId || currentConv?.providerId || undefined;
     const modelId = currentConv?.modelId || provStore.activeProvider?.defaultModel || undefined;
+
+    if (currentConv && providerId && (currentConv.providerId !== providerId || currentConv.modelId !== modelId)) {
+      get().updateConversation({
+        id: currentConv.id,
+        providerId,
+        modelId: modelId || currentConv.modelId,
+      });
+    }
 
     // Connect to the end of the current linear branch
     const parentId = messages.length > 0 ? messages[messages.length - 1].id : null;
@@ -480,7 +488,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const provStore = useProviderStore.getState();
     const settingsStore = useSettingsStore.getState();
 
-    const providerId = currentConv?.providerId || provStore.activeProviderId || undefined;
+    const providerId = provStore.activeProviderId || currentConv?.providerId || undefined;
     const modelId = currentConv?.modelId || provStore.activeProvider?.defaultModel || undefined;
 
     const newForkedUserMsgId = crypto.randomUUID();
@@ -609,7 +617,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const provStore = useProviderStore.getState();
     const settingsStore = useSettingsStore.getState();
 
-    const providerId = currentConv?.providerId || provStore.activeProviderId || undefined;
+    const providerId = provStore.activeProviderId || currentConv?.providerId || undefined;
     const modelId = currentConv?.modelId || provStore.activeProvider?.defaultModel || undefined;
 
     const newAssistantMsgId = crypto.randomUUID();

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useProviderStore } from '../../store/useProviderStore';
+import { useChatStore } from '../../store/useChatStore';
 import { ProviderForm } from './ProviderForm';
 import { ProviderConfig, DiagnosticLog } from '@shared/types';
 
@@ -285,7 +286,17 @@ export const SettingsModal: React.FC = () => {
                           <div className="flex items-center space-x-1.5 shrink-0">
                             {!isActive && (
                               <button
-                                onClick={() => setActiveProvider(p.id)}
+                                onClick={() => {
+                                  setActiveProvider(p.id);
+                                  const chatStore = useChatStore.getState();
+                                  if (chatStore.activeConversation) {
+                                    chatStore.updateConversation({
+                                      id: chatStore.activeConversation.id,
+                                      providerId: p.id,
+                                      modelId: p.defaultModel || chatStore.activeConversation.modelId,
+                                    });
+                                  }
+                                }}
                                 className="px-2.5 py-1 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-xs font-medium border border-border transition-colors"
                               >
                                 Activate

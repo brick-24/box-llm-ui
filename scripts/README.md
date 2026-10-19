@@ -30,6 +30,16 @@ This directory contains Node.js automation scripts for compiling, bundling, and 
 
 ---
 
+### 3. [`clean-data.js`](file:///c:/Users/raghav/Desktop/spare/box/scripts/clean-data.js)
+- **Purpose**: Wipes local SQLite database files, encryption master keys, and cache files created during development and testing.
+- **Key Actions**:
+  - Resolves application data directories across platforms (`universal-llm-client-dev`, `universal-llm-client`, `Universal LLM`).
+  - Deletes SQLite database files (`universal-llm.sqlite*`) and `.master.key` files.
+  - Outputs a summary of cleaned folders.
+- **Execution**: Triggered via `npm run clean:data` or as part of `npm run dist:clean`.
+
+---
+
 ## Build Pipeline Flow
 
 ```mermaid

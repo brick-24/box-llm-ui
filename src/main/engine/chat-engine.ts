@@ -108,10 +108,10 @@ export class ChatEngine {
       this.db.updateConversation({ id: conversationId, title: newTitle });
     }
 
-    // 1. Resolve Provider
+    // 1. Resolve Provider and Model
     const providerId = options.providerId || conv.providerId;
     const providers = this.db.getProviders();
-    const rawConfig = providers.find((p) => p.id === providerId) || providers[0];
+    let rawConfig = providers.find((p) => p.id === providerId) || providers[0];
     if (!rawConfig) {
       const errMsg = 'No AI provider configured. Please open Settings -> Providers and configure an API endpoint.';
       DiagnosticsService.log('error', 'api', errMsg);
@@ -125,15 +125,70 @@ export class ChatEngine {
       throw new Error(errMsg);
     }
 
+    let currentModel = options.modelId || conv.modelId || rawConfig.defaultModel;
+
+    // Intelligent auto-recovery for provider/model mismatch (e.g. conversation stuck on Ollama while user chose a Gemini or OpenAI model)
+    if (
+      rawConfig &&
+      currentModel &&
+      (rawConfig.baseUrl.includes('localhost') || rawConfig.name.toLowerCase().includes('ollama'))
+    ) {
+      const lowerModel = currentModel.toLowerCase();
+      if (lowerModel.startsWith('gemini-') || lowerModel.startsWith('google/')) {
+        const geminiProv = providers.find(
+          (p) => p.name.toLowerCase().includes('gemini') || p.baseUrl.includes('generativelanguage.googleapis.com')
+        );
+        if (geminiProv) {
+          DiagnosticsService.log(
+            'warn',
+            'api',
+            `Model '${currentModel}' is a Google Gemini model, but active provider was '${rawConfig.name}'. Auto-routing to '${geminiProv.name}'.`
+          );
+          rawConfig = geminiProv;
+          this.db.updateConversation({ id: conversationId, providerId: geminiProv.id, modelId: currentModel });
+        }
+      } else if (lowerModel.startsWith('gpt-') || lowerModel.startsWith('o1') || lowerModel.startsWith('o3')) {
+        const openaiProv = providers.find(
+          (p) => p.name.toLowerCase().includes('openai') && !p.baseUrl.includes('localhost')
+        );
+        if (openaiProv) {
+          DiagnosticsService.log(
+            'warn',
+            'api',
+            `Model '${currentModel}' is an OpenAI model, but active provider was '${rawConfig.name}'. Auto-routing to '${openaiProv.name}'.`
+          );
+          rawConfig = openaiProv;
+          this.db.updateConversation({ id: conversationId, providerId: openaiProv.id, modelId: currentModel });
+        }
+      }
+    }
+
     // Decrypt API key
     const config: ProviderConfig = {
       ...rawConfig,
       apiKey: this.creds.decrypt(rawConfig.apiKey),
     };
 
-    let currentModel = options.modelId || conv.modelId || config.defaultModel;
+    if (!currentModel) {
+      currentModel = config.defaultModel;
+    }
+
     if (!currentModel) {
       const errMsg = 'No model selected. Please select a model or enter a model ID.';
+      DiagnosticsService.log('error', 'api', errMsg);
+      if (win) {
+        win.webContents.send('chat:stream-error', {
+          conversationId,
+          messageId: 'err',
+          error: errMsg,
+        });
+      }
+      throw new Error(errMsg);
+    }
+
+    // Guard against unconfigured API keys for remote cloud providers
+    if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) {
+      const errMsg = `API Key required for '${config.name}'. Please open Settings -> Providers and enter your API key.`;
       DiagnosticsService.log('error', 'api', errMsg);
       if (win) {
         win.webContents.send('chat:stream-error', {

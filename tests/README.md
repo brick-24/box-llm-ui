@@ -54,3 +54,42 @@ npm run test:watch
   - Provider configuration validation (URLs, endpoints, auth configurations).
   - Model parameter boundary checks (temperature range 0-2, max tokens >= 1).
   - Conversation and message validation constraints.
+
+### 6. [`thinking.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/thinking.test.ts)
+- **Component Tested**: Thinking & reasoning utilities ([`src/renderer/src/utils/thinking.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/utils/thinking.ts))
+- **Test Scenarios**:
+  - Extraction of inline `<think>...</think>` tags and reasoning blocks.
+  - Multi-tag separation and preservation of residual answer content.
+  - Duration formatting (`Thought for 4.2s`, `Thought for 1m 15s`).
+
+### 7. [`branching.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/branching.test.ts)
+- **Component Tested**: Branch history resolver and sibling tree navigation ([`src/renderer/src/utils/branching.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/utils/branching.ts) and [`ChatEngine.resolveBranchHistory`](file:///c:/Users/raghav/Desktop/spare/box/src/main/engine/chat-engine.ts))
+- **Test Scenarios**:
+  - Sibling resolution for parent-linked message nodes.
+  - Backward ancestor chain traversal ensuring prompt isolation.
+  - Forking alternative branches from edited prompts.
+
+### 8. [`artifacts.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/artifacts.test.ts)
+- **Component Tested**: Code artifact detection and sandboxing ([`src/renderer/src/utils/artifact-utils.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/utils/artifact-utils.ts))
+- **Test Scenarios**:
+  - Detection of HTML, SVG, and interactive markup in code blocks.
+  - Extraction of clean executable source from markdown fences.
+  - HTML wrapper document generation with sandboxed security policies.
+
+### 9. [`model-limits.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/model-limits.test.ts)
+- **Component Tested**: Dynamic model limits catalog resolution ([`src/renderer/src/utils/model-limits.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/utils/model-limits.ts))
+- **Test Scenarios**:
+  - Resolution of context window and max output tokens for Gemini (1M/2M), Claude, GPT-4o, and DeepSeek.
+  - Adaptive slider bounds clamping and compact formatting.
+
+### 10. [`database-migration.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/database-migration.test.ts)
+- **Component Tested**: SQLite schema migrations ([`src/main/storage/database.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/storage/database.ts))
+- **Test Scenarios**:
+  - Safe, non-destructive migration of legacy databases without `parent_id`, `reasoning_content`, or `thinking_duration_ms` columns.
+  - Creation of column-dependent indexes.
+
+### 11. [`reset-data.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/reset-data.test.ts)
+- **Component Tested**: Database factory reset and cleanup ([`src/main/storage/database.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/storage/database.ts))
+- **Test Scenarios**:
+  - Complete purging of all SQLite tables (`conversations`, `messages`, `providers`, `settings`, `diagnostics`).
+  - Re-seeding of default provider presets with empty API keys and fresh initial "New Chat".

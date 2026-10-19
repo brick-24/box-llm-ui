@@ -13,6 +13,8 @@ import {
   Download,
   Upload,
   Shield,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useProviderStore } from '../../store/useProviderStore';
@@ -31,6 +33,7 @@ export const SettingsModal: React.FC = () => {
   const [diagnostics, setDiagnostics] = useState<DiagnosticLog[]>([]);
   const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
   const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     if (isSettingsOpen && activeTab === 'diagnostics') {
@@ -76,6 +79,36 @@ export const SettingsModal: React.FC = () => {
       if (editingProvider?.id === id) {
         setEditingProvider(null);
       }
+    }
+  };
+
+  const handleResetAllData = async () => {
+    if (!window.electronAPI) return;
+    const confirmed = confirm(
+      '⚠️ FACTORY RESET WARNING\n\n' +
+      'Are you sure you want to clear all data?\n\n' +
+      'This will permanently delete:\n' +
+      '• All conversations and message histories\n' +
+      '• All configured API keys and custom providers\n' +
+      '• All diagnostic logs\n\n' +
+      'The application will be restored to clean factory defaults with fresh presets.\n\n' +
+      'Do you wish to proceed?'
+    );
+    if (!confirmed) return;
+
+    setIsResetting(true);
+    try {
+      const res = await window.electronAPI.resetAllData();
+      if (res.success) {
+        alert('All local database records and API keys have been cleared. The application will now reload.');
+        window.location.reload();
+      } else {
+        alert(`Failed to reset data: ${res.error || 'Unknown error'}`);
+      }
+    } catch (e: any) {
+      alert(`Error during reset: ${e?.message || e}`);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -643,6 +676,25 @@ export const SettingsModal: React.FC = () => {
                 <p className="text-muted-foreground leading-relaxed">
                   Your chat history and providers are stored locally in SQLite (`universal-llm.sqlite`). All API credentials are encrypted with your operating system's native keychain (via Electron `safeStorage`).
                 </p>
+              </div>
+
+              {/* DANGER ZONE: FACTORY RESET */}
+              <div className="p-4 rounded-xl border border-destructive/40 bg-destructive/5 space-y-3">
+                <div className="flex items-center space-x-2 text-destructive font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-destructive" />
+                  <span>Danger Zone: Factory Reset</span>
+                </div>
+                <p className="text-muted-foreground leading-relaxed">
+                  Permanently erase all local SQLite databases, conversation histories, custom settings, and encrypted API credentials. Restores the application to fresh out-of-the-box defaults. Ideal for wiping test data before packaging or distributing an installer.
+                </p>
+                <button
+                  onClick={handleResetAllData}
+                  disabled={isResetting}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-md bg-destructive text-destructive-foreground font-medium text-xs hover:bg-destructive/90 disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+                  <span>{isResetting ? 'Resetting All Data...' : 'Reset to Factory Defaults'}</span>
+                </button>
               </div>
             </div>
           )}

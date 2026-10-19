@@ -45,6 +45,7 @@ export interface ElectronAPI {
   saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>;
   getDiagnostics: () => Promise<any[]>;
   clearDiagnostics: () => Promise<{ success: boolean }>;
+  resetAllData: () => Promise<{ success: boolean; error?: string }>;
 
   // Window Controls
   minimizeWindow: () => void;
@@ -88,6 +89,7 @@ const api: ElectronAPI = {
   saveSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
   getDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
   clearDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_CLEAR),
+  resetAllData: () => ipcRenderer.invoke(IPC_CHANNELS.APP_RESET_DATA),
 
   minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MINIMIZE),
   maximizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_MAXIMIZE),

@@ -357,16 +357,20 @@ export class OpenAiAdapter implements IProviderAdapter {
     const handleStreamComplete = (
       fullText: string,
       usage?: TokenUsage,
-      finishReason?: string
+      finishReason?: string,
+      reasoningFullText?: string,
+      thinkingDurationMs?: number
     ) => {
-      DiagnosticsService.log('info', 'api', `[API Response Body] Stream complete (${fullText.length} chars)`, {
+      DiagnosticsService.log('info', 'api', `[API Response Body] Stream complete (${fullText.length} chars, reasoning: ${reasoningFullText?.length || 0} chars)`, {
         model: body.model || params.model,
         finishReason: finishReason || 'stop',
         tokenUsage: usage,
         textLength: fullText.length,
+        reasoningLength: reasoningFullText?.length || 0,
+        thinkingDurationMs,
         receivedContent: fullText,
       });
-      callbacks.onEnd(fullText, usage, finishReason);
+      callbacks.onEnd(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs);
     };
 
     const contentType = res.headers.get('content-type') || '';
@@ -385,8 +389,13 @@ export class OpenAiAdapter implements IProviderAdapter {
         content = choice.text;
       }
 
-      if (!content && choice?.message?.reasoning_content) {
-        content = choice.message.reasoning_content;
+      let reasoning = '';
+      if (typeof choice?.message?.reasoning_content === 'string') {
+        reasoning = choice.message.reasoning_content;
+      } else if (typeof choice?.message?.thought === 'string') {
+        reasoning = choice.message.thought;
+      } else if (typeof choice?.message?.reasoning === 'string') {
+        reasoning = choice.message.reasoning;
       }
 
       const usage = json.usage
@@ -398,8 +407,8 @@ export class OpenAiAdapter implements IProviderAdapter {
         : undefined;
 
       const finishReason = choice?.finish_reason || 'stop';
-      callbacks.onChunk(content, content);
-      handleStreamComplete(content, usage, finishReason);
+      callbacks.onChunk(content, content, reasoning || undefined, reasoning || undefined);
+      handleStreamComplete(content, usage, finishReason, reasoning || undefined);
       return;
     }
 
@@ -407,13 +416,29 @@ export class OpenAiAdapter implements IProviderAdapter {
     const decoder = new TextDecoder('utf-8');
 
     let streamCompleted = false;
+    let thinkingStartTime: number | null = null;
+    let thinkingEndTime: number | null = null;
+
     const parser = createSseStreamParser({
-      onDelta: (delta, fullText) => {
-        callbacks.onChunk(delta, fullText);
+      onDelta: (delta, fullText, reasoningDelta, reasoningFullText) => {
+        if (reasoningDelta && !thinkingStartTime) {
+          thinkingStartTime = Date.now();
+        }
+        if (delta && thinkingStartTime && !thinkingEndTime) {
+          thinkingEndTime = Date.now();
+        }
+        callbacks.onChunk(delta, fullText, reasoningDelta, reasoningFullText);
       },
-      onDone: (fullText, usage, finishReason) => {
+      onDone: (fullText, usage, finishReason, reasoningFullText) => {
         streamCompleted = true;
-        handleStreamComplete(fullText, usage, finishReason);
+        if (thinkingStartTime && !thinkingEndTime) {
+          thinkingEndTime = Date.now();
+        }
+        const thinkingDurationMs =
+          thinkingStartTime && thinkingEndTime
+            ? Math.max(0, thinkingEndTime - thinkingStartTime)
+            : undefined;
+        handleStreamComplete(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs);
       },
       onError: (err) => {
         callbacks.onError(err);
@@ -432,6 +457,7 @@ export class OpenAiAdapter implements IProviderAdapter {
       // If server finished stream without explicit [DONE]
       if (!streamCompleted) {
         let full = parser.getFullText();
+        let fullReasoning = parser.getFullReasoning();
         let usage = parser.getTokenUsage();
         let finish = parser.getFinishReason() || 'stop';
 
@@ -440,7 +466,11 @@ export class OpenAiAdapter implements IProviderAdapter {
           try {
             const json = JSON.parse(rawAccumulated.trim());
             const choice = json.choices?.[0];
-            full = choice?.message?.content || choice?.delta?.content || choice?.text || choice?.message?.reasoning_content || '';
+            full = choice?.message?.content || choice?.delta?.content || choice?.text || '';
+            const fallbackReasoning = choice?.message?.reasoning_content || choice?.message?.thought || choice?.message?.reasoning || '';
+            if (fallbackReasoning && !fullReasoning) {
+              fullReasoning = fallbackReasoning;
+            }
             if (json.usage) {
               usage = {
                 promptTokens: json.usage.prompt_tokens,
@@ -459,22 +489,41 @@ export class OpenAiAdapter implements IProviderAdapter {
                 const j = JSON.parse(clean);
                 const c = j.choices?.[0];
                 const piece = c?.delta?.content || c?.text || c?.message?.content || '';
+                const rPiece = c?.delta?.reasoning_content || c?.message?.reasoning_content || c?.delta?.thought || '';
                 if (piece) full += piece;
+                if (rPiece) fullReasoning += rPiece;
                 if (c?.finish_reason) finish = c.finish_reason;
               } catch {}
             }
           }
         }
 
-        handleStreamComplete(full, usage, finish);
+        if (thinkingStartTime && !thinkingEndTime) {
+          thinkingEndTime = Date.now();
+        }
+        const thinkingDurationMs =
+          thinkingStartTime && thinkingEndTime
+            ? Math.max(0, thinkingEndTime - thinkingStartTime)
+            : undefined;
+
+        handleStreamComplete(full, usage, finish, fullReasoning || undefined, thinkingDurationMs);
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        // Generation was cancelled by user
+        if (thinkingStartTime && !thinkingEndTime) {
+          thinkingEndTime = Date.now();
+        }
+        const thinkingDurationMs =
+          thinkingStartTime && thinkingEndTime
+            ? Math.max(0, thinkingEndTime - thinkingStartTime)
+            : undefined;
+
         callbacks.onEnd(
           parser.getFullText(),
           parser.getTokenUsage(),
-          'cancelled'
+          'cancelled',
+          parser.getFullReasoning() || undefined,
+          thinkingDurationMs
         );
         return;
       }
@@ -586,19 +635,25 @@ export class OpenAiAdapter implements IProviderAdapter {
 
     const json = await res.json();
     const content = json.choices?.[0]?.message?.content || '';
+    const reasoningContent =
+      json.choices?.[0]?.message?.reasoning_content ||
+      json.choices?.[0]?.message?.thought ||
+      json.choices?.[0]?.message?.reasoning ||
+      undefined;
     const tokenUsage: TokenUsage | undefined = json.usage ? {
       promptTokens: json.usage.prompt_tokens,
       completionTokens: json.usage.completion_tokens,
       totalTokens: json.usage.total_tokens,
     } : undefined;
 
-    DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars)`, {
+    DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars, reasoning: ${reasoningContent?.length || 0} chars)`, {
       model: body.model || params.model,
       tokenUsage,
       textLength: content.length,
+      reasoningLength: reasoningContent?.length || 0,
       receivedContent: content,
     });
 
-    return { content, tokenUsage };
+    return { content, tokenUsage, reasoningContent };
   }
 }

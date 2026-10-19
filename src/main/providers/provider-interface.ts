@@ -17,8 +17,8 @@ export interface ChatRequestParams {
 }
 
 export interface StreamCallbacks {
-  onChunk: (delta: string, fullText: string) => void;
-  onEnd: (fullText: string, usage?: TokenUsage, finishReason?: string) => void;
+  onChunk: (delta: string, fullText: string, reasoningDelta?: string, reasoningFullText?: string) => void;
+  onEnd: (fullText: string, usage?: TokenUsage, finishReason?: string, reasoningFullText?: string, thinkingDurationMs?: number) => void;
   onError: (err: Error) => void;
 }
 
@@ -35,7 +35,7 @@ export interface IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage }>;
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string }>;
 }
 
 export function resolveEndpoint(baseUrl: string, endpoint: string): string {

@@ -1,7 +1,9 @@
 import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { IPC_CHANNELS } from './channels';
+import { PROVIDER_PRESETS } from '../../shared/constants';
 import { AppDatabase } from '../storage/database';
 import { CredentialManager } from '../storage/credentials';
 import { ChatEngine, SendMessageOptions } from '../engine/chat-engine';
@@ -152,7 +154,14 @@ export function registerIpcHandlers(
 
     for (const m of msgs) {
       const roleLabel = m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role;
-      md += `### ${roleLabel}\n\n${m.content}\n\n`;
+      md += `### ${roleLabel}\n\n`;
+
+      if (m.reasoningContent) {
+        const durationStr = m.thinkingDurationMs ? ` (${(m.thinkingDurationMs / 1000).toFixed(1)}s)` : '';
+        md += `<details>\n<summary>Thinking Process${durationStr}</summary>\n\n${m.reasoningContent}\n\n</details>\n\n`;
+      }
+
+      md += `${m.content}\n\n`;
 
       if (m.attachments && m.attachments.length > 0) {
         md += `*Attachments:*\n`;
@@ -317,6 +326,58 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.DIAGNOSTICS_CLEAR, async () => {
     DiagnosticsService.clearLogs();
     return { success: true };
+  });
+
+  // === FACTORY RESET ===
+  ipcMain.handle(IPC_CHANNELS.APP_RESET_DATA, async () => {
+    try {
+      // 1. Wipe database tables
+      db.resetAllData();
+
+      // 2. Reset stored credentials
+      creds.reset();
+
+      // 3. Re-seed default provider presets with empty API keys
+      for (const preset of PROVIDER_PRESETS) {
+        db.saveProvider({
+          id: crypto.randomUUID(),
+          name: preset.name || 'Provider',
+          baseUrl: preset.baseUrl || 'https://api.openai.com/v1',
+          chatEndpoint: preset.chatEndpoint || '/chat/completions',
+          apiKey: '',
+          modelListUrl: preset.modelListUrl || '/models',
+          defaultModel: preset.defaultModel || '',
+          protocol: preset.protocol || 'openai-chat',
+          authMethod: preset.authMethod || 'bearer',
+          customHeaders: preset.customHeaders || {},
+          customBodyParams: preset.customBodyParams || {},
+          requestTimeout: 60000,
+          maxRetries: 2,
+          streamingEnabled: preset.streamingEnabled !== false,
+          customMapping: preset.customMapping,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+
+      // 4. Create fresh default conversation
+      const firstProv = db.getProviders()[0];
+      db.createConversation({
+        id: crypto.randomUUID(),
+        title: 'New Chat',
+        providerId: firstProv ? firstProv.id : '',
+        modelId: firstProv ? firstProv.defaultModel : '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      DiagnosticsService.log('info', 'storage', 'Application reset to factory defaults');
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Handlers] Failed to reset application data:', err);
+      DiagnosticsService.log('error', 'storage', 'Failed to reset application data', { error: String(err) });
+      return { success: false, error: err?.message || 'Failed to reset application data' };
+    }
   });
 
   // === WINDOW & SYSTEM ===

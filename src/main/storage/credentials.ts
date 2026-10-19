@@ -100,4 +100,16 @@ export class CredentialManager {
       return '';
     }
   }
+
+  public reset(): void {
+    try {
+      if (fs.existsSync(this.keyFilePath)) {
+        fs.unlinkSync(this.keyFilePath);
+      }
+      this.fallbackKey = null;
+      this.init();
+    } catch (e) {
+      console.error('[CredentialManager] Failed to reset keys:', e);
+    }
+  }
 }

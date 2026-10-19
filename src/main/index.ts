@@ -14,6 +14,11 @@ let db: AppDatabase;
 let creds: CredentialManager;
 let chatEngine: ChatEngine;
 
+// Isolate development environment user data so dev runs never pollute production builds
+if (!app.isPackaged) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'universal-llm-client-dev'));
+}
+
 // Enforce single instance lock
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {

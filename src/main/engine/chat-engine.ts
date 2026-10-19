@@ -31,6 +31,8 @@ export interface SendMessageOptions {
   modelId?: string;
   messageId?: string;
   userMessageId?: string;
+  parentId?: string | null;
+  isRegeneration?: boolean;
 }
 
 export class ChatEngine {
@@ -51,6 +53,28 @@ export class ChatEngine {
     const truncated = cleaned.slice(0, 40);
     const lastSpace = truncated.lastIndexOf(' ');
     return lastSpace > 20 ? `${truncated.slice(0, lastSpace)}...` : `${truncated}...`;
+  }
+
+  public static resolveBranchHistory(
+    allMessages: ChatMessage[],
+    targetMessageId: string
+  ): ChatMessage[] {
+    const messageMap = new Map<string, ChatMessage>(allMessages.map((m) => [m.id, m]));
+    let currId: string | null = targetMessageId;
+    const branchChain: ChatMessage[] = [];
+    const visited = new Set<string>();
+
+    while (currId && messageMap.has(currId) && !visited.has(currId)) {
+      visited.add(currId);
+      const msg = messageMap.get(currId)!;
+      branchChain.push(msg);
+      currId = msg.parentId || null;
+    }
+
+    if (branchChain.length > 0) {
+      return branchChain.reverse();
+    }
+    return allMessages;
   }
 
   public stopGeneration(conversationId: string): boolean {
@@ -121,25 +145,33 @@ export class ChatEngine {
       throw new Error(errMsg);
     }
 
-    // 2. Persist User Message
+    // 2. Persist User Message (if not regenerating existing assistant turn)
     const userMsgId = options.userMessageId || crypto.randomUUID();
-    const userMsg: ChatMessage = {
-      id: userMsgId,
-      conversationId,
-      role: 'user',
-      content,
-      attachments,
-      status: 'completed',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    this.db.saveMessage(userMsg);
+    let effectiveUserMsgId = userMsgId;
+
+    if (!options.isRegeneration) {
+      const userMsg: ChatMessage = {
+        id: userMsgId,
+        conversationId,
+        parentId: options.parentId !== undefined ? options.parentId : null,
+        role: 'user',
+        content,
+        attachments,
+        status: 'completed',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      this.db.saveMessage(userMsg);
+    } else {
+      effectiveUserMsgId = options.userMessageId || (options.parentId ?? '');
+    }
 
     // 3. Prepare Assistant Message Placeholder
     const assistantMsgId = options.messageId || crypto.randomUUID();
     const assistantMsg: ChatMessage = {
       id: assistantMsgId,
       conversationId,
+      parentId: effectiveUserMsgId || (options.parentId ?? null),
       role: 'assistant',
       content: '',
       status: 'streaming',
@@ -152,10 +184,9 @@ export class ChatEngine {
     const controller = new AbortController();
     this.activeControllers.set(conversationId, controller);
 
-    // Retrieve conversation history
+    // Retrieve conversation history and resolve tree branch ancestor chain
     const allMessages = this.db.getMessages(conversationId);
-    // Exclude the currently streaming assistant message
-    const history = allMessages.filter((m) => m.id !== assistantMsgId);
+    const history = ChatEngine.resolveBranchHistory(allMessages, effectiveUserMsgId);
 
     const adapter = AdapterFactory.getAdapter(config.protocol);
     const startTime = Date.now();
@@ -195,17 +226,19 @@ export class ChatEngine {
               topP: options.topP ?? conv.topP,
             },
             {
-              onChunk: (delta, fullText) => {
+              onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
                 if (win && !controller.signal.aborted) {
                   win.webContents.send('chat:stream-chunk', {
                     conversationId,
                     messageId: assistantMsgId,
                     delta,
                     fullText,
+                    reasoningDelta,
+                    reasoningFullText,
                   });
                 }
               },
-              onEnd: (fullText, tokenUsage, finishReason) => {
+              onEnd: (fullText, tokenUsage, finishReason, reasoningFullText, thinkingDurationMs) => {
                 const latencyMs = Date.now() - startTime;
                 const status = finishReason === 'cancelled' ? 'stopped' : 'completed';
                 finalFullText = fullText;
@@ -213,6 +246,8 @@ export class ChatEngine {
 
                 this.db.updateMessage(assistantMsgId, {
                   content: fullText,
+                  reasoningContent: reasoningFullText,
+                  thinkingDurationMs,
                   status,
                   tokenUsage,
                   latencyMs,
@@ -224,6 +259,8 @@ export class ChatEngine {
                     conversationId,
                     messageId: assistantMsgId,
                     fullText,
+                    reasoningFullText,
+                    thinkingDurationMs,
                     tokenUsage,
                     latencyMs,
                     finishReason,
@@ -235,6 +272,8 @@ export class ChatEngine {
                   finishReason,
                   tokenUsage,
                   textLength: fullText.length,
+                  reasoningLength: reasoningFullText?.length || 0,
+                  thinkingDurationMs,
                   responsePreview: fullText.length > 1000 ? `${fullText.slice(0, 1000)}...` : fullText,
                 });
               },
@@ -265,6 +304,7 @@ export class ChatEngine {
 
           this.db.updateMessage(assistantMsgId, {
             content: resp.content,
+            reasoningContent: resp.reasoningContent,
             status: 'completed',
             tokenUsage: resp.tokenUsage,
             latencyMs,
@@ -277,11 +317,14 @@ export class ChatEngine {
               messageId: assistantMsgId,
               delta: resp.content,
               fullText: resp.content,
+              reasoningDelta: resp.reasoningContent,
+              reasoningFullText: resp.reasoningContent,
             });
             win.webContents.send('chat:stream-end', {
               conversationId,
               messageId: assistantMsgId,
               fullText: resp.content,
+              reasoningFullText: resp.reasoningContent,
               tokenUsage: resp.tokenUsage,
               latencyMs,
               finishReason: 'stop',

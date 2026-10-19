@@ -69,8 +69,11 @@ export const MessageAttachmentSchema = z.object({
 export const ChatMessageSchema = z.object({
   id: z.string().min(1),
   conversationId: z.string().min(1),
+  parentId: z.string().nullable().optional(),
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
+  reasoningContent: z.string().optional(),
+  thinkingDurationMs: z.number().optional(),
   attachments: z.array(MessageAttachmentSchema).optional(),
   status: z.enum(['sending', 'streaming', 'completed', 'error', 'stopped']),
   errorMessage: z.string().optional(),

@@ -94,10 +94,6 @@ export class AppDatabase {
         updated_at INTEGER NOT NULL
       );
 
-      CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
-      CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
-      CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);
-
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -112,6 +108,31 @@ export class AppDatabase {
         details_json TEXT
       );
     `);
+
+    // Safe incremental migrations for existing databases (run before creating column-dependent indexes)
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN parent_id TEXT;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN reasoning_content TEXT;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN thinking_duration_ms INTEGER;`);
+    } catch {}
+
+    // Indexes created after all columns exist
+    try {
+      this.db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);`);
+    } catch {}
+    try {
+      this.db.run(`CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);`);
+    } catch {}
+    try {
+      this.db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);`);
+    } catch {}
+    try {
+      this.db.run(`CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);`);
+    } catch {}
   }
 
   private queueSave() {
@@ -335,7 +356,7 @@ export class AppDatabase {
   public getMessages(conversationId: string): ChatMessage[] {
     if (!this.db) return [];
     const stmt = this.db.prepare(`
-      SELECT id, conversation_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at
       FROM messages WHERE conversation_id = $cid
       ORDER BY created_at ASC
     `);
@@ -346,15 +367,18 @@ export class AppDatabase {
       msgs.push({
         id: row[0] as string,
         conversationId: row[1] as string,
-        role: row[2] as any,
-        content: row[3] as string,
-        attachments: row[4] ? JSON.parse(row[4] as string) : undefined,
-        status: row[5] as any,
-        errorMessage: (row[6] as string) || undefined,
-        tokenUsage: row[7] ? JSON.parse(row[7] as string) : undefined,
-        latencyMs: row[8] !== null ? Number(row[8]) : undefined,
-        createdAt: Number(row[9]),
-        updatedAt: Number(row[10]),
+        parentId: (row[2] as string) || null,
+        role: row[3] as any,
+        content: row[4] as string,
+        attachments: row[5] ? JSON.parse(row[5] as string) : undefined,
+        status: row[6] as any,
+        errorMessage: (row[7] as string) || undefined,
+        tokenUsage: row[8] ? JSON.parse(row[8] as string) : undefined,
+        latencyMs: row[9] !== null ? Number(row[9]) : undefined,
+        reasoningContent: (row[10] as string) || undefined,
+        thinkingDurationMs: row[11] !== null ? Number(row[11]) : undefined,
+        createdAt: Number(row[12]),
+        updatedAt: Number(row[13]),
       });
     }
     stmt.free();
@@ -364,20 +388,24 @@ export class AppDatabase {
   public saveMessage(msg: ChatMessage): void {
     if (!this.db) return;
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, conversation_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, created_at, updated_at)
-      VALUES ($id, $cid, $role, $content, $attachments, $status, $error, $usage, $latency, $created, $updated)
+      INSERT INTO messages (id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at)
+      VALUES ($id, $cid, $parentId, $role, $content, $attachments, $status, $error, $usage, $latency, $reasoning, $thinkingDuration, $created, $updated)
       ON CONFLICT(id) DO UPDATE SET
+        parent_id = $parentId,
         content = $content,
         attachments_json = $attachments,
         status = $status,
         error_message = $error,
         token_usage_json = $usage,
         latency_ms = $latency,
+        reasoning_content = $reasoning,
+        thinking_duration_ms = $thinkingDuration,
         updated_at = $updated
     `);
     stmt.run({
       $id: msg.id,
       $cid: msg.conversationId,
+      $parentId: msg.parentId || null,
       $role: msg.role,
       $content: msg.content,
       $attachments: msg.attachments ? JSON.stringify(msg.attachments) : null,
@@ -385,6 +413,8 @@ export class AppDatabase {
       $error: msg.errorMessage || null,
       $usage: msg.tokenUsage ? JSON.stringify(msg.tokenUsage) : null,
       $latency: msg.latencyMs !== undefined ? msg.latencyMs : null,
+      $reasoning: msg.reasoningContent || null,
+      $thinkingDuration: msg.thinkingDurationMs !== undefined ? msg.thinkingDurationMs : null,
       $created: msg.createdAt,
       $updated: msg.updatedAt,
     });
@@ -401,7 +431,7 @@ export class AppDatabase {
   public updateMessage(messageId: string, updates: Partial<ChatMessage>): void {
     if (!this.db) return;
     const stmtSelect = this.db.prepare(`
-      SELECT id, conversation_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at
       FROM messages WHERE id = $id
     `);
     stmtSelect.bind({ $id: messageId });
@@ -415,15 +445,18 @@ export class AppDatabase {
     const existing: ChatMessage = {
       id: row[0] as string,
       conversationId: row[1] as string,
-      role: row[2] as any,
-      content: row[3] as string,
-      attachments: row[4] ? JSON.parse(row[4] as string) : undefined,
-      status: row[5] as any,
-      errorMessage: (row[6] as string) || undefined,
-      tokenUsage: row[7] ? JSON.parse(row[7] as string) : undefined,
-      latencyMs: row[8] !== null ? Number(row[8]) : undefined,
-      createdAt: Number(row[9]),
-      updatedAt: Number(row[10]),
+      parentId: (row[2] as string) || null,
+      role: row[3] as any,
+      content: row[4] as string,
+      attachments: row[5] ? JSON.parse(row[5] as string) : undefined,
+      status: row[6] as any,
+      errorMessage: (row[7] as string) || undefined,
+      tokenUsage: row[8] ? JSON.parse(row[8] as string) : undefined,
+      latencyMs: row[9] !== null ? Number(row[9]) : undefined,
+      reasoningContent: (row[10] as string) || undefined,
+      thinkingDurationMs: row[11] !== null ? Number(row[11]) : undefined,
+      createdAt: Number(row[12]),
+      updatedAt: Number(row[13]),
     };
 
     const merged = { ...existing, ...updates, updatedAt: updates.updatedAt || Date.now() };
@@ -559,5 +592,17 @@ export class AppDatabase {
 
     this.persistImmediately();
     return { importedConversations: convCount, importedMessages: msgCount, importedProviders: provCount };
+  }
+
+  public resetAllData(): void {
+    if (!this.db) return;
+    this.db.run(`
+      DELETE FROM messages;
+      DELETE FROM conversations;
+      DELETE FROM providers;
+      DELETE FROM settings;
+      DELETE FROM diagnostics;
+    `);
+    this.persistImmediately();
   }
 }

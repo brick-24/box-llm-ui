@@ -20,8 +20,29 @@
     }
   ],
   "win": {
-    "target": ["nsis", "portable"],
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
     "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Universal LLM",
+    "uninstallDisplayName": "Universal LLM Client",
+    "deleteAppDataOnUninstall": true
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
   },
   "mac": {
     "target": ["dmg"],

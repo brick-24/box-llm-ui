@@ -9,18 +9,32 @@ import {
   Clock,
   Layers,
   Edit3,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { ChatMessage } from '@shared/types';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { AttachmentChip } from './AttachmentChip';
+import { ThinkingAccordion } from './ThinkingAccordion';
+import { parseThinkingContent } from '../../utils/thinking';
+import { SiblingInfo } from '../../utils/branching';
 import { useChatStore } from '../../store/useChatStore';
 
 interface MessageItemProps {
   message: ChatMessage;
-  onEditAndResend?: (content: string) => void;
+  siblingInfo?: SiblingInfo;
+  onSwitchBranch?: (direction: 'prev' | 'next') => void;
+  onEditAndBranch?: (content: string) => void;
+  onRegenerate?: () => void;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndResend }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({
+  message,
+  siblingInfo,
+  onSwitchBranch,
+  onEditAndBranch,
+  onRegenerate,
+}) => {
   const { retryMessage, deleteMessage } = useChatStore();
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -31,9 +45,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
   const isError = message.status === 'error';
   const isStopped = message.status === 'stopped';
 
+  // Parse chain-of-thought vs main response content for assistant messages
+  const { reasoning, content: displayContent, isThinking } = !isUser
+    ? parseThinkingContent(message.content, message.reasoningContent, isStreaming)
+    : { reasoning: undefined, content: message.content, isThinking: false };
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(isUser ? message.content : (displayContent || message.content));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
@@ -42,9 +61,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
   };
 
   const handleSaveEdit = () => {
-    if (editedContent.trim() && onEditAndResend) {
-      onEditAndResend(editedContent.trim());
+    if (editedContent.trim() && onEditAndBranch) {
+      onEditAndBranch(editedContent.trim());
       setIsEditing(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsEditing(false);
+      setEditedContent(message.content);
     }
   };
 
@@ -82,6 +112,35 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
                 <span>{message.latencyMs}ms</span>
               </span>
             )}
+
+            {/* Sibling Branch Pagination (< 1 / 2 >) */}
+            {siblingInfo && siblingInfo.total > 1 && (
+              <div className="flex items-center space-x-0.5 select-none text-[10px] font-mono text-muted-foreground bg-secondary/80 px-1 py-0.5 rounded border border-border shadow-xs ml-1">
+                <button
+                  type="button"
+                  onClick={() => onSwitchBranch?.('prev')}
+                  disabled={siblingInfo.index === 0}
+                  className="p-0.5 rounded hover:text-foreground hover:bg-background/80 disabled:opacity-30 disabled:hover:text-muted-foreground transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  title="Previous branch version"
+                  aria-label="Previous version"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <span className="px-1 font-semibold text-foreground">
+                  {siblingInfo.index + 1} / {siblingInfo.total}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onSwitchBranch?.('next')}
+                  disabled={siblingInfo.index === siblingInfo.total - 1}
+                  className="p-0.5 rounded hover:text-foreground hover:bg-background/80 disabled:opacity-30 disabled:hover:text-muted-foreground transition-colors cursor-pointer disabled:cursor-not-allowed"
+                  title="Next branch version"
+                  aria-label="Next version"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Attachments (if user message) */}
@@ -99,21 +158,29 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
               <textarea
                 value={editedContent}
                 onChange={(e) => setEditedContent(e.target.value)}
-                className="w-full bg-card border border-ring rounded-lg p-3 text-xs sm:text-sm text-foreground outline-none resize-y min-h-[90px]"
+                onKeyDown={handleKeyDown}
+                autoFocus
+                className="w-full bg-card border border-ring rounded-lg p-3 text-xs sm:text-sm text-foreground outline-none resize-y min-h-[90px] shadow-xs"
               />
               <div className="flex items-center space-x-2">
                 <button
                   onClick={handleSaveEdit}
-                  className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium shadow-sm"
+                  className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium shadow-sm transition-opacity"
                 >
-                  Save & Resend
+                  Save & Submit
                 </button>
                 <button
-                  onClick={() => setIsEditing(false)}
-                  className="px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-xs font-medium border border-border"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditedContent(message.content);
+                  }}
+                  className="px-3 py-1.5 rounded-md bg-secondary hover:bg-accent text-secondary-foreground text-xs font-medium border border-border transition-colors"
                 >
                   Cancel
                 </button>
+                <span className="text-[10px] text-muted-foreground ml-auto font-mono select-none">
+                  Ctrl+Enter to submit • Esc to cancel
+                </span>
               </div>
             </div>
           ) : (
@@ -124,7 +191,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
                 </div>
               ) : (
                 <>
-                  {isStreaming && !message.content ? (
+                  {/* Collapsible Thinking / Reasoning Accordion */}
+                  {(reasoning || isThinking) && (
+                    <ThinkingAccordion
+                      reasoning={reasoning || ''}
+                      isThinking={isThinking}
+                      thinkingDurationMs={message.thinkingDurationMs}
+                    />
+                  )}
+
+                  {isStreaming && !displayContent && !isThinking ? (
                     <div className="flex items-center space-x-2 py-1 text-xs text-muted-foreground select-none">
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse [animation-delay:150ms]" />
@@ -132,9 +208,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
                       <span className="text-[11px] font-medium text-muted-foreground tracking-tight ml-1">Thinking...</span>
                     </div>
                   ) : (
-                    <MarkdownRenderer content={message.content || ''} />
+                    displayContent ? (
+                      <MarkdownRenderer content={displayContent} />
+                    ) : null
                   )}
-                  {isStreaming && message.content && <span className="animate-cursor text-foreground" />}
+                  {isStreaming && displayContent && <span className="animate-cursor text-foreground" />}
                 </>
               )}
             </div>
@@ -150,7 +228,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
                   {message.errorMessage || 'Failed to complete generation'}
                 </p>
                 <button
-                  onClick={() => retryMessage(message.id)}
+                  onClick={() => (onRegenerate ? onRegenerate() : retryMessage(message.id))}
                   className="mt-2 inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-destructive/20 hover:bg-destructive/30 text-destructive font-medium transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
@@ -190,14 +268,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
                 {copied ? <Check className="w-3.5 h-3.5 text-foreground" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
 
-              {isUser && onEditAndResend && (
+              {isUser && onEditAndBranch && (
                 <button
                   onClick={() => {
                     setIsEditing(true);
                     setEditedContent(message.content);
                   }}
                   className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  title="Edit message"
+                  title="Edit message (creates new branch)"
                   aria-label="Edit Message"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -206,9 +284,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
 
               {!isUser && (
                 <button
-                  onClick={() => retryMessage(message.id)}
+                  onClick={() => (onRegenerate ? onRegenerate() : retryMessage(message.id))}
                   className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  title="Regenerate response"
+                  title="Regenerate response (creates new branch)"
                   aria-label="Regenerate Response"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -230,3 +308,4 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onEditAndRese
     </div>
   );
 };
+

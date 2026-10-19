@@ -11,7 +11,11 @@
     "build": "npm run build:renderer && npm run build:main",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "clean:data": "node scripts/clean-data.js",
+    "dist:clean": "node scripts/clean-data.js && npm run dist:win"
   },
   "keywords": [
     "electron",
@@ -22,7 +26,7 @@
     "react",
     "universal"
   ],
-  "author": "",
+  "author": "Universal LLM Client",
   "license": "MIT",
   "dependencies": {
     "eventsource-parser": "^3.0.0",

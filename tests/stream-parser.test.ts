@@ -75,20 +75,36 @@ describe('SSE Stream Parser', () => {
     expect(completedText).toBe('Direct message content');
   });
 
-  it('handles reasoning_content from thinking models', () => {
+  it('handles reasoning_content from thinking models separately from content', () => {
     let completedText = '';
+    let completedReasoning = '';
+    const receivedReasoningDeltas: string[] = [];
 
     const parser = createSseStreamParser({
-      onDelta: () => {},
-      onDone: (fullText) => {
+      onDelta: (delta, fullText, reasoningDelta, reasoningFullText) => {
+        if (reasoningDelta) receivedReasoningDeltas.push(reasoningDelta);
+      },
+      onDone: (fullText, _usage, _finishReason, reasoningFullText) => {
         completedText = fullText;
+        completedReasoning = reasoningFullText || '';
       },
       onError: () => {},
     });
 
-    const chunk1 = 'data: {"choices":[{"delta":{"reasoning_content":"Thinking steps..."}}]}\n\ndata: [DONE]\n\n';
-    parser.feed(chunk1);
+    const chunk1 = 'data: {"choices":[{"delta":{"reasoning_content":"Thinking "}}]}\n\n';
+    const chunk2 = 'data: {"choices":[{"delta":{"reasoning_content":"step 1..."}}]}\n\n';
+    const chunk3 = 'data: {"choices":[{"delta":{"content":"Final answer."}}]}\n\n';
+    const chunk4 = 'data: [DONE]\n\n';
 
-    expect(completedText).toBe('Thinking steps...');
+    parser.feed(chunk1);
+    parser.feed(chunk2);
+    parser.feed(chunk3);
+    parser.feed(chunk4);
+
+    expect(receivedReasoningDeltas).toEqual(['Thinking ', 'step 1...']);
+    expect(completedReasoning).toBe('Thinking step 1...');
+    expect(completedText).toBe('Final answer.');
+    expect(parser.getFullReasoning()).toBe('Thinking step 1...');
+    expect(parser.getFullText()).toBe('Final answer.');
   });
 });

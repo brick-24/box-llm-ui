@@ -32,6 +32,7 @@ export const IPC_CHANNELS = {
   SETTINGS_SAVE: 'settings:save',
   DIAGNOSTICS_GET: 'diagnostics:get',
   DIAGNOSTICS_CLEAR: 'diagnostics:clear',
+  APP_RESET_DATA: 'app:reset-data',
 
   // Window Controls
   WINDOW_MINIMIZE: 'window:minimize',

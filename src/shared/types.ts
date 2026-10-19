@@ -90,8 +90,11 @@ export interface TokenUsage {
 export interface ChatMessage {
   id: string;
   conversationId: string;
+  parentId?: string | null;
   role: MessageRole;
   content: string;
+  reasoningContent?: string;
+  thinkingDurationMs?: number;
   attachments?: MessageAttachment[];
   status: MessageStatus;
   errorMessage?: string;
@@ -142,12 +145,16 @@ export interface StreamChunkEvent {
   messageId: string;
   delta: string;
   fullText: string;
+  reasoningDelta?: string;
+  reasoningFullText?: string;
 }
 
 export interface StreamEndEvent {
   conversationId: string;
   messageId: string;
   fullText: string;
+  reasoningFullText?: string;
+  thinkingDurationMs?: number;
   tokenUsage?: TokenUsage;
   latencyMs?: number;
   finishReason?: string;

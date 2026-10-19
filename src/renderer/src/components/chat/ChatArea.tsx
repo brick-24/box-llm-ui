@@ -24,6 +24,10 @@ import {
 export const ChatArea: React.FC = () => {
   const {
     messages,
+    siblingsMap,
+    switchBranch,
+    editAndBranchMessage,
+    regenerateMessage,
     activeConversation,
     updateConversation,
     sendMessage,
@@ -435,7 +439,10 @@ export const ChatArea: React.FC = () => {
               <MessageItem
                 key={msg.id}
                 message={msg}
-                onEditAndResend={(newContent) => sendMessage(newContent)}
+                siblingInfo={siblingsMap.get(msg.id)}
+                onSwitchBranch={(dir) => switchBranch(msg.id, dir)}
+                onEditAndBranch={(newContent) => editAndBranchMessage(msg.id, newContent)}
+                onRegenerate={() => regenerateMessage(msg.id)}
               />
             ))}
           </div>

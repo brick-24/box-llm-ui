@@ -338,7 +338,9 @@ export function registerIpcHandlers(
       creds.reset();
 
       // 3. Re-seed default provider presets with empty API keys
-      for (const preset of PROVIDER_PRESETS) {
+      const now = Date.now();
+      for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+        const preset = PROVIDER_PRESETS[i];
         db.saveProvider({
           id: crypto.randomUUID(),
           name: preset.name || 'Provider',
@@ -355,13 +357,17 @@ export function registerIpcHandlers(
           maxRetries: 2,
           streamingEnabled: preset.streamingEnabled !== false,
           customMapping: preset.customMapping,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+          createdAt: now + i * 10,
+          updatedAt: now + (PROVIDER_PRESETS.length - i) * 10,
         });
       }
 
       // 4. Create fresh default conversation
-      const firstProv = db.getProviders()[0];
+      const allProv = db.getProviders();
+      const firstProv =
+        allProv.find((p) => p.name.includes('Gemini')) ||
+        allProv.find((p) => p.name.includes('OpenAI')) ||
+        allProv[0];
       db.createConversation({
         id: crypto.randomUUID(),
         title: 'New Chat',

@@ -85,6 +85,7 @@ export const ChatArea: React.FC = () => {
 
       updateConversation({
         id: activeConversation.id,
+        providerId: activeProvider?.id || activeConversation.providerId,
         modelId: mId,
         maxTokens: adjustedMaxTokens,
       });
@@ -103,6 +104,7 @@ export const ChatArea: React.FC = () => {
       }
       updateConversation({
         id: activeConversation.id,
+        providerId: activeProvider?.id || activeConversation.providerId,
         modelId: customId,
         maxTokens: adjustedMaxTokens,
       });
@@ -145,7 +147,18 @@ export const ChatArea: React.FC = () => {
                 </label>
                 <select
                   value={activeProvider?.id || ''}
-                  onChange={(e) => setActiveProvider(e.target.value)}
+                  onChange={(e) => {
+                    const newProvId = e.target.value;
+                    setActiveProvider(newProvId);
+                    const targetProv = providers.find((p) => p.id === newProvId);
+                    if (activeConversation && targetProv) {
+                      updateConversation({
+                        id: activeConversation.id,
+                        providerId: newProvId,
+                        modelId: targetProv.defaultModel || activeConversation.modelId,
+                      });
+                    }
+                  }}
                   className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring"
                 >
                   {providers.map((p) => (

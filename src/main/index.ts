@@ -112,7 +112,9 @@ async function initServices() {
   // Seed default presets if no providers exist
   const existingProviders = db.getProviders();
   if (existingProviders.length === 0) {
-    for (const preset of PROVIDER_PRESETS) {
+    const now = Date.now();
+    for (let i = 0; i < PROVIDER_PRESETS.length; i++) {
+      const preset = PROVIDER_PRESETS[i];
       const p: ProviderConfig = {
         id: crypto.randomUUID(),
         name: preset.name || 'Provider',
@@ -129,8 +131,8 @@ async function initServices() {
         maxRetries: 2,
         streamingEnabled: preset.streamingEnabled !== false,
         customMapping: preset.customMapping,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: now + i * 10,
+        updatedAt: now + (PROVIDER_PRESETS.length - i) * 10,
       };
       db.saveProvider(p);
     }
@@ -199,7 +201,11 @@ async function initServices() {
   // Create default initial conversation if none exist
   const convs = db.getConversations();
   if (convs.length === 0) {
-    const firstProv = db.getProviders()[0];
+    const allProv = db.getProviders();
+    const firstProv =
+      allProv.find((p) => p.name.includes('Gemini')) ||
+      allProv.find((p) => p.name.includes('OpenAI')) ||
+      allProv[0];
     db.createConversation({
       id: crypto.randomUUID(),
       title: 'New Chat',

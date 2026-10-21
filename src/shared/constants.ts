@@ -10,6 +10,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sendOnEnter: true,
   localPdfOcrFallback: false,
   contextWarningLimit: 200000,
+  defaultWebBrowsing: false,
+  searchProvider: 'duckduckgo',
+  maxSearchResults: 5,
 };
 
 export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [

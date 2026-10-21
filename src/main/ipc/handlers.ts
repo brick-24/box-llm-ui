@@ -408,4 +408,26 @@ export function registerIpcHandlers(
       shell.openExternal(url);
     }
   });
+
+  // === BROWSER & WEB SURFING ===
+  ipcMain.handle(IPC_CHANNELS.BROWSER_VIEW_PAGE, async (_event, url: string, takeScreenshot = true) => {
+    try {
+      const { browserSession } = await import('../browser/browser-session');
+      return await browserSession.browsePage(url, { takeScreenshot });
+    } catch (err: any) {
+      console.error('[Handlers] Failed to browse page:', err);
+      return { url, title: url, content: '', characterCount: 0, truncated: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_SEARCH_TEST, async (_event, query: string) => {
+    try {
+      const { executeWebSearch } = await import('../browser/search-service');
+      const settings = db.getSettings();
+      return await executeWebSearch(query, settings);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to search web:', err);
+      return [];
+    }
+  });
 }

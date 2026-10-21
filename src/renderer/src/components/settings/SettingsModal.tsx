@@ -15,6 +15,11 @@ import {
   Shield,
   AlertTriangle,
   RotateCcw,
+  Globe,
+  Search,
+  ExternalLink,
+  Key,
+  Check,
 } from 'lucide-react';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useProviderStore } from '../../store/useProviderStore';
@@ -35,6 +40,10 @@ export const SettingsModal: React.FC = () => {
   const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
   const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [searchTestQuery, setSearchTestQuery] = useState('');
+  const [isTestingSearch, setIsTestingSearch] = useState(false);
+  const [searchTestResults, setSearchTestResults] = useState<any[] | null>(null);
+  const [searchTestError, setSearchTestError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isSettingsOpen && activeTab === 'diagnostics') {
@@ -59,6 +68,24 @@ export const SettingsModal: React.FC = () => {
     if (window.electronAPI) {
       await window.electronAPI.clearDiagnostics();
       setDiagnostics([]);
+    }
+  };
+
+  const handleTestSearch = async () => {
+    if (!searchTestQuery.trim() || !window.electronAPI) return;
+    setIsTestingSearch(true);
+    setSearchTestResults(null);
+    setSearchTestError(null);
+    try {
+      const results = await window.electronAPI.searchWeb(searchTestQuery.trim());
+      setSearchTestResults(results);
+      if (!results || results.length === 0) {
+        setSearchTestError('No search results returned from provider.');
+      }
+    } catch (err: any) {
+      setSearchTestError(err.message || 'Failed to execute test search');
+    } finally {
+      setIsTestingSearch(false);
     }
   };
 
@@ -179,6 +206,18 @@ export const SettingsModal: React.FC = () => {
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Defaults & Generation</span>
+          </button>
+
+          <button
+            onClick={() => openSettings('web')}
+            className={`flex items-center space-x-2 py-2 px-3 border-b-2 text-xs font-medium transition-colors shrink-0 ${
+              activeTab === 'web'
+                ? 'border-primary text-foreground font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Web Browsing</span>
           </button>
 
           <button
@@ -542,6 +581,258 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: WEB SURFING & SEARCH */}
+          {activeTab === 'web' && (
+            <div className="max-w-2xl space-y-6 text-xs">
+              {/* Header explanation banner */}
+              <div className="p-4 rounded-xl bg-secondary/30 border border-border flex items-start space-x-3">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-foreground text-sm mb-1">
+                    Native Web Browsing & Grounding
+                  </h4>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Box empowers LLMs to browse the live web, fetch articles into clean markdown, evaluate JavaScript, and capture screenshots. Powered by Electron's native Chromium sandbox with zero external browser downloads.
+                  </p>
+                </div>
+              </div>
+
+              {/* Default Web Browsing Toggle */}
+              <div>
+                <label className="block mb-1.5 font-semibold text-foreground uppercase tracking-wider">
+                  Default Chat Behavior
+                </label>
+                <label className="flex items-start space-x-3 p-3.5 rounded-xl bg-card border border-border hover:bg-secondary/20 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(settings.defaultWebBrowsing)}
+                    onChange={(e) => updateSettings({ defaultWebBrowsing: e.target.checked })}
+                    className="mt-0.5 accent-primary h-4 w-4 rounded"
+                  />
+                  <div>
+                    <span className="font-semibold text-foreground block">
+                      Enable Web Browsing by default on new chats
+                    </span>
+                    <span className="text-[11px] text-muted-foreground block mt-0.5">
+                      When enabled, models with function calling support will have access to search and page reading tools automatically. You can always toggle this on/off per chat using the 🌐 button.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Search Engine Provider Selection */}
+              <div>
+                <label className="block mb-1.5 font-semibold text-foreground uppercase tracking-wider">
+                  Web Search Provider
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      id: 'duckduckgo',
+                      name: 'DuckDuckGo',
+                      badge: 'Free • Zero Config',
+                      desc: 'Built-in privacy scraper. No API key required.',
+                    },
+                    {
+                      id: 'brave',
+                      name: 'Brave Search',
+                      badge: 'API Key Required',
+                      desc: 'Independent index, high accuracy, and fast latency.',
+                      link: 'https://brave.com/search/api/',
+                    },
+                    {
+                      id: 'tavily',
+                      name: 'Tavily Search',
+                      badge: 'API Key Required',
+                      desc: 'Built specifically for AI agents & autonomous research.',
+                      link: 'https://tavily.com/',
+                    },
+                    {
+                      id: 'serper',
+                      name: 'Serper (Google)',
+                      badge: 'API Key Required',
+                      desc: 'Fast Google search results & rich snippets.',
+                      link: 'https://serper.dev/',
+                    },
+                  ].map((p) => {
+                    const isSelected = (settings.searchProvider || 'duckduckgo') === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() =>
+                          updateSettings({
+                            searchProvider: p.id as 'duckduckgo' | 'brave' | 'tavily' | 'serper',
+                          })
+                        }
+                        className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-secondary/40 border-primary shadow-sm'
+                            : 'bg-card border-border hover:border-muted-foreground/30'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-foreground text-xs">{p.name}</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
+                              isSelected
+                                ? 'bg-primary text-primary-foreground font-medium'
+                                : 'bg-secondary text-muted-foreground'
+                            }`}
+                          >
+                            {p.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mb-1.5">{p.desc}</p>
+                        {p.link && (
+                          <a
+                            href="#"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.electronAPI?.openExternal(p.link!);
+                            }}
+                            className="inline-flex items-center text-[10px] text-primary hover:underline"
+                          >
+                            <span>Get API Key</span>
+                            <ExternalLink className="w-2.5 h-2.5 ml-1" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* API Key input if not DuckDuckGo */}
+              {settings.searchProvider && settings.searchProvider !== 'duckduckgo' && (
+                <div className="p-4 rounded-xl bg-card border border-border space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Key className="w-4 h-4 text-muted-foreground" />
+                    <label className="font-semibold text-foreground uppercase tracking-wider text-[11px]">
+                      {settings.searchProvider.toUpperCase()} API Key
+                    </label>
+                  </div>
+                  <input
+                    type="password"
+                    placeholder={`Enter your ${settings.searchProvider} API key...`}
+                    value={settings.searchApiKey || ''}
+                    onChange={(e) => updateSettings({ searchApiKey: e.target.value })}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-foreground font-mono outline-none focus:border-ring focus:ring-1 focus:ring-ring text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Stored securely on your local device. Never sent to any third party other than the search provider.
+                  </p>
+                </div>
+              )}
+
+              {/* Max search results */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-foreground uppercase tracking-wider">
+                    Max Search Results per Query
+                  </label>
+                  <span className="font-mono text-muted-foreground text-[11px]">
+                    {settings.maxSearchResults || 5} results
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="3"
+                  max="10"
+                  step="1"
+                  value={settings.maxSearchResults || 5}
+                  onChange={(e) =>
+                    updateSettings({ maxSearchResults: parseInt(e.target.value) || 5 })
+                  }
+                  className="w-full accent-foreground cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <span>Concise (3)</span>
+                  <span>Balanced (5)</span>
+                  <span>Thorough (10)</span>
+                </div>
+              </div>
+
+              {/* Diagnostic Test Search Box */}
+              <div className="pt-2 border-t border-border">
+                <label className="block mb-1.5 font-semibold text-foreground uppercase tracking-wider">
+                  Test Search Connection
+                </label>
+                <div className="flex space-x-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="e.g. quantum computing advances or latest news..."
+                      value={searchTestQuery}
+                      onChange={(e) => setSearchTestQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleTestSearch()}
+                      className="w-full bg-card border border-border rounded-lg pl-8 pr-3 py-2 text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring text-xs"
+                    />
+                    <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2.5" />
+                  </div>
+                  <button
+                    onClick={handleTestSearch}
+                    disabled={isTestingSearch || !searchTestQuery.trim()}
+                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center space-x-1.5 shrink-0"
+                  >
+                    {isTestingSearch ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Searching...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Test Search</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {searchTestError && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-[11px]">
+                    {searchTestError}
+                  </div>
+                )}
+
+                {searchTestResults && searchTestResults.length > 0 && (
+                  <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground font-mono">
+                      <span>Found {searchTestResults.length} live results:</span>
+                      <span className="text-emerald-500 font-semibold flex items-center">
+                        <Check className="w-3 h-3 mr-1" /> Connected
+                      </span>
+                    </div>
+                    {searchTestResults.map((res: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-lg bg-card border border-border hover:border-primary/40 transition-colors"
+                      >
+                        <a
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            window.electronAPI?.openExternal(res.url);
+                          }}
+                          className="font-medium text-primary hover:underline text-xs flex items-center space-x-1.5"
+                        >
+                          <span className="truncate">{res.title}</span>
+                          <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                        </a>
+                        <p className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
+                          {res.url}
+                        </p>
+                        <p className="text-[11px] text-foreground/80 line-clamp-2 mt-1">
+                          {res.snippet}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

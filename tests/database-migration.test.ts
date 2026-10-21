@@ -55,6 +55,12 @@ describe('Database Migration Tests', () => {
     try {
       db.run(`ALTER TABLE messages ADD COLUMN finish_reason TEXT;`);
     } catch {}
+    try {
+      db.run(`ALTER TABLE messages ADD COLUMN tool_calls_json TEXT;`);
+    } catch {}
+    try {
+      db.run(`ALTER TABLE messages ADD COLUMN citations_json TEXT;`);
+    } catch {}
 
     // Then create index on parent_id
     expect(() => {
@@ -62,7 +68,7 @@ describe('Database Migration Tests', () => {
     }).not.toThrow();
 
     // Verify row was preserved and column is queryable
-    const stmt = db.prepare('SELECT id, parent_id, reasoning_content, finish_reason FROM messages WHERE id = $id');
+    const stmt = db.prepare('SELECT id, parent_id, reasoning_content, finish_reason, tool_calls_json, citations_json FROM messages WHERE id = $id');
     stmt.bind({ $id: 'm1' });
     expect(stmt.step()).toBe(true);
     const row = stmt.get();
@@ -72,6 +78,72 @@ describe('Database Migration Tests', () => {
     expect(row[1]).toBe(null); // parent_id initialized to null
     expect(row[2]).toBe(null); // reasoning_content initialized to null
     expect(row[3]).toBe(null); // finish_reason initialized to null
+    expect(row[4]).toBe(null); // tool_calls_json initialized to null
+    expect(row[5]).toBe(null); // citations_json initialized to null
     db.close();
+  });
+
+  it('should initialize AppDatabase and persist conversations with web browsing and messages with tool calls & citations', async () => {
+    const { AppDatabase } = await import('../src/main/storage/database');
+    const tmpDir = path.resolve(__dirname, 'test-db-dir');
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    }
+
+    const appDb = new AppDatabase(tmpDir);
+    await appDb.initialize();
+
+    // 1. Create a conversation with web browsing enabled
+    appDb.createConversation({
+      id: 'conv-web-1',
+      title: 'Web Browsing Chat',
+      providerId: 'prov-1',
+      modelId: 'gpt-4o',
+      webBrowsingEnabled: true,
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+
+    const conv = appDb.getConversation('conv-web-1');
+    expect(conv).toBeDefined();
+    expect(conv?.webBrowsingEnabled).toBe(true);
+
+    // 2. Save a message with tool calls and citations
+    appDb.saveMessage({
+      id: 'msg-web-1',
+      conversationId: 'conv-web-1',
+      role: 'assistant',
+      content: 'Here are the latest Electron 34 features...',
+      status: 'completed',
+      toolCalls: [
+        {
+          id: 'call-1',
+          name: 'search_web',
+          input: { query: 'Electron 34 release' },
+          output: { results: [{ title: 'Electron 34.0.0', url: 'https://electronjs.org' }] },
+          status: 'completed',
+          durationMs: 450,
+        },
+      ],
+      citations: [
+        {
+          title: 'Electron 34.0.0',
+          url: 'https://www.electronjs.org/blog/electron-34-0',
+          snippet: 'Electron 34.0.0 has been released with Chromium 132.',
+        },
+      ],
+      createdAt: 1010,
+      updatedAt: 1010,
+    });
+
+    const msgs = appDb.getMessages('conv-web-1');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].toolCalls).toHaveLength(1);
+    expect(msgs[0].toolCalls?.[0].name).toBe('search_web');
+    expect(msgs[0].citations).toHaveLength(1);
+    expect(msgs[0].citations?.[0].url).toBe('https://www.electronjs.org/blog/electron-34-0');
+
+    // Clean up
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });

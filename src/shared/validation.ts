@@ -66,6 +66,23 @@ export const MessageAttachmentSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
+export const WebCitationSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  snippet: z.string().optional(),
+  favicon: z.string().optional(),
+});
+
+export const ToolCallItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  input: z.record(z.any()),
+  output: z.any().optional(),
+  status: z.enum(['pending', 'running', 'completed', 'error']),
+  error: z.string().optional(),
+  durationMs: z.number().optional(),
+});
+
 export const ChatMessageSchema = z.object({
   id: z.string().min(1),
   conversationId: z.string().min(1),
@@ -84,6 +101,9 @@ export const ChatMessageSchema = z.object({
   }).optional(),
   latencyMs: z.number().optional(),
   finishReason: z.string().optional(),
+  citations: z.array(WebCitationSchema).optional(),
+  toolCalls: z.array(ToolCallItemSchema).optional(),
+  toolCallId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -98,6 +118,7 @@ export const ConversationSchema = z.object({
   maxTokens: z.number().positive().optional(),
   topP: z.number().min(0).max(1).optional(),
   isPinned: z.boolean().optional(),
+  webBrowsingEnabled: z.boolean().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -113,4 +134,8 @@ export const AppSettingsSchema = z.object({
   localPdfOcrFallback: z.boolean(),
   contextWarningLimit: z.number(),
   activeProviderId: z.string().optional(),
+  defaultWebBrowsing: z.boolean().default(false),
+  searchProvider: z.enum(['duckduckgo', 'brave', 'tavily', 'serper']).default('duckduckgo'),
+  searchApiKey: z.string().optional(),
+  maxSearchResults: z.number().default(5),
 });

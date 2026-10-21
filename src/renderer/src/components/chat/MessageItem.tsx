@@ -18,6 +18,8 @@ import { isMaxTokensHit } from '@shared/model-limits';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { AttachmentChip } from './AttachmentChip';
 import { ThinkingAccordion } from './ThinkingAccordion';
+import { ToolCallCard } from './ToolCallCard';
+import { CitationsList } from './CitationsList';
 import { parseThinkingContent } from '../../utils/thinking';
 import { SiblingInfo } from '../../utils/branching';
 import { useChatStore } from '../../store/useChatStore';
@@ -203,12 +205,21 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     />
                   )}
 
+                  {/* Real-time Tool Execution Cards (Search, Read, Browse) */}
+                  {message.toolCalls && message.toolCalls.length > 0 && (
+                    <ToolCallCard toolCalls={message.toolCalls} />
+                  )}
+
                   {isStreaming && !displayContent && !isThinking ? (
                     <div className="flex items-center space-x-2 py-1 text-xs text-muted-foreground select-none">
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse [animation-delay:150ms]" />
                       <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse [animation-delay:300ms]" />
-                      <span className="text-[11px] font-medium text-muted-foreground tracking-tight ml-1">Thinking...</span>
+                      <span className="text-[11px] font-medium text-muted-foreground tracking-tight ml-1">
+                        {message.toolCalls?.some((t) => t.status === 'running')
+                          ? 'Searching & browsing the web...'
+                          : 'Thinking...'}
+                      </span>
                     </div>
                   ) : (
                     displayContent ? (
@@ -216,6 +227,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     ) : null
                   )}
                   {isStreaming && displayContent && <span className="animate-cursor text-foreground" />}
+
+                  {/* Web Citations and Grounding Sources List */}
+                  {message.citations && message.citations.length > 0 && (
+                    <CitationsList citations={message.citations} />
+                  )}
                 </>
               )}
             </div>

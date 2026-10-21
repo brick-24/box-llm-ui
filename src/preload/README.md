@@ -32,6 +32,7 @@ This directory contains the secure context bridge between Electron's isolated re
 | **Streaming Events** | `onStreamChunk(cb)` | Listens for incoming token deltas during generation. |
 | | `onStreamEnd(cb)` | Listens for generation completion, latency, and token metrics. |
 | | `onStreamError(cb)` | Listens for generation errors or network timeouts. |
+| | `onToolCallUpdate(cb)` | Listens for live tool execution state changes (`running`, `completed`, `error`). |
 | **Providers** | `getProviders()` | Retrieves all configured providers (with decrypted status). |
 | | `saveProvider(config)` | Creates or updates a provider, securely encrypting API keys. |
 | | `deleteProvider(id)` | Removes a provider configuration. |
@@ -39,6 +40,8 @@ This directory contains the secure context bridge between Electron's isolated re
 | | `fetchModels(providerId)` | Queries provider `/models` endpoint to discover supported models. |
 | **Documents** | `selectDocumentDialog()` | Opens native file dialog for `.pdf`, `.docx`, `.txt`, `.md`, images. |
 | | `processDocument(path)` | Extracts text, metadata, and token estimations from disk files. |
+| **Browser & Web** | `browsePage(url, screenshot)` | Fetches page markdown text and off-screen Chromium visual screenshots. |
+| | `searchWeb(query)` | Executes live web searches via configured search provider. |
 | **System & Window** | `minimize()`, `maximize()`, `close()` | Custom frameless window controls. |
 | | `openExternal(url)` | Securely opens links in the user's default browser. |
 | | `getSettings()`, `saveSettings()` | Reads and writes application preferences. |

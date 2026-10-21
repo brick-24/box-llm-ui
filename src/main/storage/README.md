@@ -11,10 +11,10 @@ This directory provides local database persistence and hardware-backed credentia
 - **Database Location**: `<userData>/universal-llm.sqlite` (e.g., `%APPDATA%/universal-llm-client/universal-llm.sqlite`).
 - **Schema & Migrations**:
   - Automatically runs idempotent migrations on startup (`runMigrations`).
-  - **`conversations`**: `id`, `title`, `provider_id`, `model_id`, `system_prompt`, `temperature`, `max_tokens`, `top_p`, `is_pinned`, `created_at`, `updated_at`.
-  - **`messages`**: `id`, `conversation_id`, `role`, `content`, `attachments_json`, `status`, `error_message`, `token_usage_json`, `latency_ms`, `created_at`, `updated_at`.
+  - **`conversations`**: `id`, `title`, `provider_id`, `model_id`, `system_prompt`, `temperature`, `max_tokens`, `top_p`, `is_pinned`, `web_browsing_enabled`, `created_at`, `updated_at`.
+  - **`messages`**: `id`, `conversation_id`, `parent_id`, `role`, `content`, `reasoning_content`, `thinking_duration_ms`, `attachments_json`, `tool_calls_json`, `citations_json`, `status`, `error_message`, `token_usage_json`, `latency_ms`, `created_at`, `updated_at`.
   - **`providers`**: `id`, `config_json`, `created_at`, `updated_at`.
-  - **`settings`**: `key`, `value_json`, `updated_at`.
+  - **`settings`**: `key`, `value_json`, `updated_at` (including `defaultWebBrowsing`, `searchProvider`, `searchApiKey`, `maxSearchResults`).
 - **Performance & Durability**:
   - Fast in-memory query execution with debounced disk persistence (`queueSave`, `persistImmediately`).
   - Full-text search queries using indexed SQL `LIKE` statements across titles and messages.

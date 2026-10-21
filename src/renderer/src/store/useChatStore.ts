@@ -25,6 +25,11 @@ interface ChatState {
   streamingMessageId: string | null;
   searchQuery: string;
   selectedAttachmentForModal: MessageAttachment | null;
+  isWebBrowsing: boolean;
+  activeBrowserDrawerUrl: string | null;
+  activeBrowserDrawerTitle: string | null;
+  activeBrowserDrawerScreenshot: string | null;
+  activeBrowserDrawerMarkdown: string | null;
 
   init: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
@@ -32,6 +37,10 @@ interface ChatState {
   updateConversation: (updates: Partial<Conversation> & { id: string }) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   search: (query: string) => Promise<void>;
+  toggleWebBrowsing: () => void;
+  setWebBrowsing: (enabled: boolean) => void;
+  openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
+  closeBrowserDrawer: () => void;
 
   sendMessage: (content: string) => Promise<void>;
   editAndBranchMessage: (targetMessageId: string, newContent: string) => Promise<void>;
@@ -60,6 +69,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingMessageId: null,
   searchQuery: '',
   selectedAttachmentForModal: null,
+  isWebBrowsing: false,
+  activeBrowserDrawerUrl: null,
+  activeBrowserDrawerTitle: null,
+  activeBrowserDrawerScreenshot: null,
+  activeBrowserDrawerMarkdown: null,
 
   init: async () => {
     if (!window.electronAPI) return;
@@ -136,6 +150,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         tokenUsage,
         latencyMs,
         finishReason,
+        citations,
+        toolCalls,
       } = data;
 
       if (conversationId === get().activeConversationId) {
@@ -156,6 +172,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     tokenUsage,
                     latencyMs,
                     finishReason,
+                    citations: citations ?? m.citations,
+                    toolCalls: toolCalls ?? m.toolCalls,
                   }
                 : m
             );
@@ -175,6 +193,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 tokenUsage,
                 latencyMs,
                 finishReason,
+                citations: citations ?? nextAll[lastIdx].citations,
+                toolCalls: toolCalls ?? nextAll[lastIdx].toolCalls,
               };
             } else {
               return { isStreaming: false, streamingMessageId: null };
@@ -244,6 +264,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     });
+
+    window.electronAPI.onToolCallUpdate?.((data: any) => {
+      const { conversationId, messageId, toolCall } = data;
+      if (conversationId === get().activeConversationId) {
+        set((state) => {
+          let nextAll: ChatMessage[];
+          const hasTarget = state.allMessages.some((m) => m.id === messageId);
+
+          const updateCalls = (existingCalls?: any[]) => {
+            const list = existingCalls ? [...existingCalls] : [];
+            const idx = list.findIndex((c) => c.id === toolCall.id);
+            if (idx !== -1) {
+              list[idx] = toolCall;
+            } else {
+              list.push(toolCall);
+            }
+            return list;
+          };
+
+          if (hasTarget) {
+            nextAll = state.allMessages.map((m) =>
+              m.id === messageId ? { ...m, toolCalls: updateCalls(m.toolCalls) } : m
+            );
+          } else {
+            const lastIdx = state.allMessages.findLastIndex(
+              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+            );
+            if (lastIdx !== -1) {
+              nextAll = [...state.allMessages];
+              nextAll[lastIdx] = {
+                ...nextAll[lastIdx],
+                toolCalls: updateCalls(nextAll[lastIdx].toolCalls),
+              };
+            } else {
+              return {};
+            }
+          }
+
+          const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(
+            nextAll,
+            state.activeBranchMap
+          );
+
+          return {
+            allMessages: nextAll,
+            messages: activeMessages,
+            siblingsMap,
+            activeBranchMap,
+          };
+        });
+      }
+    });
   },
 
   selectConversation: async (id: string) => {
@@ -252,9 +324,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const msgs = await window.electronAPI.getMessages(id);
     const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(msgs, {});
 
+    const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
     set({
       activeConversationId: id,
       activeConversation: conv,
+      isWebBrowsing: conv?.webBrowsingEnabled !== undefined ? Boolean(conv.webBrowsingEnabled) : defaultWeb,
       allMessages: msgs,
       messages: activeMessages,
       siblingsMap,
@@ -276,21 +350,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const pId = providerId || activeProv?.id || '';
     const mId = modelId || activeProv?.defaultModel || provStore.models[0]?.id || 'default';
+    const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
 
     const newConv: Conversation = {
       id: crypto.randomUUID(),
       title: 'New Conversation',
       providerId: pId,
       modelId: mId,
+      webBrowsingEnabled: defaultWeb,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     const created = await window.electronAPI.createConversation(newConv);
     const updated = await window.electronAPI.getConversations();
-    set({ conversations: updated });
+    set({ conversations: updated, isWebBrowsing: defaultWeb });
     await get().selectConversation(created.id);
     return created;
+  },
+
+  toggleWebBrowsing: () => {
+    const nextVal = !get().isWebBrowsing;
+    set({ isWebBrowsing: nextVal });
+    const { activeConversationId } = get();
+    if (activeConversationId) {
+      get().updateConversation({ id: activeConversationId, webBrowsingEnabled: nextVal });
+    }
+  },
+
+  setWebBrowsing: (enabled: boolean) => {
+    set({ isWebBrowsing: enabled });
+    const { activeConversationId } = get();
+    if (activeConversationId) {
+      get().updateConversation({ id: activeConversationId, webBrowsingEnabled: enabled });
+    }
+  },
+
+  openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => {
+    set({
+      activeBrowserDrawerUrl: url,
+      activeBrowserDrawerTitle: title || url,
+      activeBrowserDrawerScreenshot: screenshot || null,
+      activeBrowserDrawerMarkdown: markdown || null,
+    });
+  },
+
+  closeBrowserDrawer: () => {
+    set({
+      activeBrowserDrawerUrl: null,
+      activeBrowserDrawerTitle: null,
+      activeBrowserDrawerScreenshot: null,
+      activeBrowserDrawerMarkdown: null,
+    });
   },
 
   updateConversation: async (updates) => {
@@ -441,6 +552,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messageId: tempAssistantMsg.id,
         userMessageId: tempUserMsg.id,
         parentId,
+        webBrowsing: get().isWebBrowsing,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(convId);
@@ -558,6 +670,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messageId: newAssistantMsgId,
         userMessageId: newForkedUserMsgId,
         parentId,
+        webBrowsing: get().isWebBrowsing,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);
@@ -671,6 +784,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: parentUserMsg.id,
         parentId: parentUserMsg.id,
         isRegeneration: true,
+        webBrowsing: get().isWebBrowsing,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);

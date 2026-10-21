@@ -87,6 +87,25 @@ export interface TokenUsage {
   totalTokens?: number;
 }
 
+export interface WebCitation {
+  title: string;
+  url: string;
+  snippet?: string;
+  favicon?: string;
+}
+
+export type ToolCallStatus = 'pending' | 'running' | 'completed' | 'error';
+
+export interface ToolCallItem {
+  id: string;
+  name: string;
+  input: Record<string, any>;
+  output?: any;
+  status: ToolCallStatus;
+  error?: string;
+  durationMs?: number;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -101,6 +120,9 @@ export interface ChatMessage {
   tokenUsage?: TokenUsage;
   latencyMs?: number;
   finishReason?: string;
+  citations?: WebCitation[];
+  toolCalls?: ToolCallItem[];
+  toolCallId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -115,6 +137,7 @@ export interface Conversation {
   maxTokens?: number;
   topP?: number;
   isPinned?: boolean;
+  webBrowsingEnabled?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -130,6 +153,10 @@ export interface AppSettings {
   localPdfOcrFallback: boolean;
   contextWarningLimit: number;
   activeProviderId?: string;
+  defaultWebBrowsing: boolean;
+  searchProvider: 'duckduckgo' | 'brave' | 'tavily' | 'serper';
+  searchApiKey?: string;
+  maxSearchResults: number;
 }
 
 export interface DiagnosticLog {
@@ -159,6 +186,14 @@ export interface StreamEndEvent {
   tokenUsage?: TokenUsage;
   latencyMs?: number;
   finishReason?: string;
+  citations?: WebCitation[];
+  toolCalls?: ToolCallItem[];
+}
+
+export interface ToolCallUpdateEvent {
+  conversationId: string;
+  messageId: string;
+  toolCall: ToolCallItem;
 }
 
 export interface StreamErrorEvent {

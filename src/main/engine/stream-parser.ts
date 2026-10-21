@@ -1,10 +1,23 @@
 import { createParser } from 'eventsource-parser';
 import { TokenUsage } from '../../shared/types';
 
+export interface RawToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
 export interface ParseOptions {
   onDelta: (delta: string, fullText: string, reasoningDelta?: string, reasoningFullText?: string) => void;
-  onDone: (fullText: string, usage?: TokenUsage, finishReason?: string, reasoningFullText?: string) => void;
+  onDone: (
+    fullText: string,
+    usage?: TokenUsage,
+    finishReason?: string,
+    reasoningFullText?: string,
+    toolCalls?: RawToolCall[]
+  ) => void;
   onError: (err: Error) => void;
+  onToolCallDelta?: (toolCalls: RawToolCall[]) => void;
   customChunkExtractor?: (json: any) => { delta?: string; finishReason?: string; usage?: TokenUsage; reasoningDelta?: string };
 }
 
@@ -13,6 +26,7 @@ export function createSseStreamParser(options: ParseOptions) {
   let fullReasoning = '';
   let tokenUsage: TokenUsage | undefined;
   let finishReason: string | undefined;
+  const accumulatedToolCalls: RawToolCall[] = [];
 
   const parser = createParser({
     onEvent: (event: any) => {
@@ -20,7 +34,13 @@ export function createSseStreamParser(options: ParseOptions) {
       if (!data) return;
 
       if (data === '[DONE]') {
-        options.onDone(fullText, tokenUsage, finishReason, fullReasoning || undefined);
+        options.onDone(
+          fullText,
+          tokenUsage,
+          finishReason,
+          fullReasoning || undefined,
+          accumulatedToolCalls.length > 0 ? accumulatedToolCalls : undefined
+        );
         return;
       }
 
@@ -49,7 +69,7 @@ export function createSseStreamParser(options: ParseOptions) {
         }
 
         // Standard OpenAI format:
-        // { choices: [ { delta: { content?: string, reasoning_content?: string }, finish_reason?: string } ], usage?: { prompt_tokens, completion_tokens, total_tokens } }
+        // { choices: [ { delta: { content?: string, reasoning_content?: string, tool_calls?: [] }, finish_reason?: string } ], usage?: { prompt_tokens, completion_tokens, total_tokens } }
         if (json.usage) {
           tokenUsage = {
             promptTokens: json.usage.prompt_tokens,
@@ -62,6 +82,27 @@ export function createSseStreamParser(options: ParseOptions) {
         if (choice) {
           if (choice.finish_reason) {
             finishReason = choice.finish_reason;
+          }
+
+          const deltaToolCalls = choice.delta?.tool_calls ?? choice.message?.tool_calls;
+          if (Array.isArray(deltaToolCalls)) {
+            for (const tc of deltaToolCalls) {
+              const idx = typeof tc.index === 'number' ? tc.index : accumulatedToolCalls.length;
+              if (!accumulatedToolCalls[idx]) {
+                accumulatedToolCalls[idx] = {
+                  id: tc.id || `call_${Date.now()}_${idx}`,
+                  name: tc.function?.name || '',
+                  arguments: tc.function?.arguments || '',
+                };
+              } else {
+                if (tc.id) accumulatedToolCalls[idx].id = tc.id;
+                if (tc.function?.name) accumulatedToolCalls[idx].name += tc.function.name;
+                if (tc.function?.arguments) accumulatedToolCalls[idx].arguments += tc.function.arguments;
+              }
+            }
+            if (options.onToolCallDelta) {
+              options.onToolCallDelta(accumulatedToolCalls);
+            }
           }
 
           const deltaContent = choice.delta?.content ?? choice.text ?? choice.message?.content;
@@ -115,5 +156,6 @@ export function createSseStreamParser(options: ParseOptions) {
     getFullReasoning: () => fullReasoning,
     getTokenUsage: () => tokenUsage,
     getFinishReason: () => finishReason,
+    getToolCalls: () => accumulatedToolCalls,
   };
 }

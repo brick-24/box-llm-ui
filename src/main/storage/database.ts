@@ -80,6 +80,7 @@ export class AppDatabase {
         max_tokens INTEGER,
         top_p REAL,
         is_pinned INTEGER DEFAULT 0,
+        web_browsing_enabled INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -95,6 +96,8 @@ export class AppDatabase {
         token_usage_json TEXT,
         latency_ms INTEGER,
         finish_reason TEXT,
+        tool_calls_json TEXT,
+        citations_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -116,6 +119,9 @@ export class AppDatabase {
 
     // Safe incremental migrations for existing databases (run before creating column-dependent indexes)
     try {
+      this.db.run(`ALTER TABLE conversations ADD COLUMN web_browsing_enabled INTEGER DEFAULT 0;`);
+    } catch {}
+    try {
       this.db.run(`ALTER TABLE messages ADD COLUMN parent_id TEXT;`);
     } catch {}
     try {
@@ -126,6 +132,12 @@ export class AppDatabase {
     } catch {}
     try {
       this.db.run(`ALTER TABLE messages ADD COLUMN finish_reason TEXT;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN tool_calls_json TEXT;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN citations_json TEXT;`);
     } catch {}
 
     // Indexes created after all columns exist
@@ -204,7 +216,7 @@ export class AppDatabase {
   public getConversations(): Conversation[] {
     if (!this.db) return [];
     const res = this.db.exec(`
-      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at
+      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled
       FROM conversations
       ORDER BY is_pinned DESC, updated_at DESC
     `);
@@ -221,14 +233,15 @@ export class AppDatabase {
       isPinned: Boolean(row[8]),
       createdAt: Number(row[9]),
       updatedAt: Number(row[10]),
+      webBrowsingEnabled: Boolean(row[11]),
     }));
   }
 
   public createConversation(conv: Conversation): void {
     if (!this.db) return;
     const stmt = this.db.prepare(`
-      INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at)
-      VALUES ($id, $title, $providerId, $modelId, $systemPrompt, $temperature, $maxTokens, $topP, $isPinned, $createdAt, $updatedAt)
+      INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, web_browsing_enabled, created_at, updated_at)
+      VALUES ($id, $title, $providerId, $modelId, $systemPrompt, $temperature, $maxTokens, $topP, $isPinned, $webBrowsingEnabled, $createdAt, $updatedAt)
     `);
     stmt.run({
       $id: conv.id,
@@ -240,6 +253,7 @@ export class AppDatabase {
       $maxTokens: conv.maxTokens !== undefined ? conv.maxTokens : null,
       $topP: conv.topP !== undefined ? conv.topP : null,
       $isPinned: conv.isPinned ? 1 : 0,
+      $webBrowsingEnabled: conv.webBrowsingEnabled ? 1 : 0,
       $createdAt: conv.createdAt,
       $updatedAt: conv.updatedAt,
     });
@@ -267,6 +281,7 @@ export class AppDatabase {
         max_tokens = $maxTokens,
         top_p = $topP,
         is_pinned = $isPinned,
+        web_browsing_enabled = $webBrowsingEnabled,
         updated_at = $updatedAt
       WHERE id = $id
     `);
@@ -280,6 +295,7 @@ export class AppDatabase {
       $maxTokens: merged.maxTokens !== undefined ? merged.maxTokens : null,
       $topP: merged.topP !== undefined ? merged.topP : null,
       $isPinned: merged.isPinned ? 1 : 0,
+      $webBrowsingEnabled: merged.webBrowsingEnabled ? 1 : 0,
       $updatedAt: merged.updatedAt,
     });
     stmt.free();
@@ -289,7 +305,7 @@ export class AppDatabase {
   public getConversation(id: string): Conversation | null {
     if (!this.db) return null;
     const stmt = this.db.prepare(`
-      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at
+      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled
       FROM conversations WHERE id = $id
     `);
     stmt.bind({ $id: id });
@@ -311,6 +327,7 @@ export class AppDatabase {
       isPinned: Boolean(row[8]),
       createdAt: Number(row[9]),
       updatedAt: Number(row[10]),
+      webBrowsingEnabled: Boolean(row[11]),
     };
   }
 
@@ -332,7 +349,7 @@ export class AppDatabase {
     const cleanQuery = `%${query.trim().toLowerCase()}%`;
 
     const stmt = this.db.prepare(`
-      SELECT DISTINCT c.id, c.title, c.provider_id, c.model_id, c.system_prompt, c.temperature, c.max_tokens, c.top_p, c.is_pinned, c.created_at, c.updated_at
+      SELECT DISTINCT c.id, c.title, c.provider_id, c.model_id, c.system_prompt, c.temperature, c.max_tokens, c.top_p, c.is_pinned, c.created_at, c.updated_at, c.web_browsing_enabled
       FROM conversations c
       LEFT JOIN messages m ON m.conversation_id = c.id
       WHERE LOWER(c.title) LIKE $q OR LOWER(m.content) LIKE $q
@@ -354,6 +371,7 @@ export class AppDatabase {
         isPinned: Boolean(row[8]),
         createdAt: Number(row[9]),
         updatedAt: Number(row[10]),
+        webBrowsingEnabled: Boolean(row[11]),
       });
     }
     stmt.free();
@@ -364,7 +382,7 @@ export class AppDatabase {
   public getMessages(conversationId: string): ChatMessage[] {
     if (!this.db) return [];
     const stmt = this.db.prepare(`
-      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at, tool_calls_json, citations_json
       FROM messages WHERE conversation_id = $cid
       ORDER BY created_at ASC
     `);
@@ -388,6 +406,8 @@ export class AppDatabase {
         finishReason: (row[12] as string) || undefined,
         createdAt: Number(row[13]),
         updatedAt: Number(row[14]),
+        toolCalls: row[15] ? JSON.parse(row[15] as string) : undefined,
+        citations: row[16] ? JSON.parse(row[16] as string) : undefined,
       });
     }
     stmt.free();
@@ -397,8 +417,8 @@ export class AppDatabase {
   public saveMessage(msg: ChatMessage): void {
     if (!this.db) return;
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at)
-      VALUES ($id, $cid, $parentId, $role, $content, $attachments, $status, $error, $usage, $latency, $reasoning, $thinkingDuration, $finishReason, $created, $updated)
+      INSERT INTO messages (id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, tool_calls_json, citations_json, created_at, updated_at)
+      VALUES ($id, $cid, $parentId, $role, $content, $attachments, $status, $error, $usage, $latency, $reasoning, $thinkingDuration, $finishReason, $toolCalls, $citations, $created, $updated)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = $parentId,
         content = $content,
@@ -410,6 +430,8 @@ export class AppDatabase {
         reasoning_content = $reasoning,
         thinking_duration_ms = $thinkingDuration,
         finish_reason = $finishReason,
+        tool_calls_json = $toolCalls,
+        citations_json = $citations,
         updated_at = $updated
     `);
     stmt.run({
@@ -426,6 +448,8 @@ export class AppDatabase {
       $reasoning: msg.reasoningContent || null,
       $thinkingDuration: msg.thinkingDurationMs !== undefined ? msg.thinkingDurationMs : null,
       $finishReason: msg.finishReason || null,
+      $toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : null,
+      $citations: msg.citations ? JSON.stringify(msg.citations) : null,
       $created: msg.createdAt,
       $updated: msg.updatedAt,
     });
@@ -442,7 +466,7 @@ export class AppDatabase {
   public updateMessage(messageId: string, updates: Partial<ChatMessage>): void {
     if (!this.db) return;
     const stmtSelect = this.db.prepare(`
-      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at, tool_calls_json, citations_json
       FROM messages WHERE id = $id
     `);
     stmtSelect.bind({ $id: messageId });
@@ -469,6 +493,8 @@ export class AppDatabase {
       finishReason: (row[12] as string) || undefined,
       createdAt: Number(row[13]),
       updatedAt: Number(row[14]),
+      toolCalls: row[15] ? JSON.parse(row[15] as string) : undefined,
+      citations: row[16] ? JSON.parse(row[16] as string) : undefined,
     };
 
     const merged = { ...existing, ...updates, updatedAt: updates.updatedAt || Date.now() };

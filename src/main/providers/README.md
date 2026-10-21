@@ -35,7 +35,7 @@ This directory contains protocol adapters enabling the application to connect to
 - **Key Capabilities**:
   - **Dual Response Support**: Seamlessly parses both true SSE streams (`text/event-stream`) and direct JSON responses (`application/json`) even when `stream: true` is sent.
   - **Reasoning Model Support**: Automatically handles `choice.delta.reasoning_content` (DeepSeek-R1 / Qwen thinking models).
-  - **Fallback Recovery**: Accumulates raw stream chunks to extract valid JSON even if server proxy drops SSE event headers.
+  - **Function Calling & Web Tools**: Serializes OpenAI-compatible `tools` schemas and `tool_choice: 'auto'`, accumulates streamed `tool_calls` payloads, and serializes historical tool executions with `role: 'tool'` and corresponding `tool_call_id`.
   - **Image Attachments**: Converts image attachments into OpenAI multimodal content blocks (`{ type: 'image_url', image_url: { url: ... } }`).
 
 ---

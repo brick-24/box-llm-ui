@@ -85,7 +85,7 @@ npm run test:watch
 ### 10. [`database-migration.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/database-migration.test.ts)
 - **Component Tested**: SQLite schema migrations ([`src/main/storage/database.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/storage/database.ts))
 - **Test Scenarios**:
-  - Safe, non-destructive migration of legacy databases without `parent_id`, `reasoning_content`, or `thinking_duration_ms` columns.
+  - Safe, non-destructive migration of legacy databases without `parent_id`, `reasoning_content`, `thinking_duration_ms`, `web_browsing_enabled`, `tool_calls_json`, or `citations_json` columns.
   - Creation of column-dependent indexes.
 
 ### 11. [`reset-data.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/reset-data.test.ts)
@@ -93,3 +93,25 @@ npm run test:watch
 - **Test Scenarios**:
   - Complete purging of all SQLite tables (`conversations`, `messages`, `providers`, `settings`, `diagnostics`).
   - Re-seeding of default provider presets with empty API keys and fresh initial "New Chat".
+
+### 12. [`web-search.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/web-search.test.ts)
+- **Component Tested**: Web search scraping and URL resolution ([`src/main/browser/search-service.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/browser/search-service.ts))
+- **Test Scenarios**:
+  - DuckDuckGo HTML scraping across multi-line snippets and complex markup.
+  - DuckDuckGo redirect URL unravelling (`//duckduckgo.com/l/?uddg=...`) into canonical URLs.
+  - HTML entity decoding (`&quot;`, `&#39;`, `&amp;`, `&lt;`, `&gt;`).
+  - Max result ceiling enforcement.
+
+### 13. [`page-fetcher.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/page-fetcher.test.ts)
+- **Component Tested**: Reader mode HTML extraction ([`src/main/browser/page-fetcher.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/browser/page-fetcher.ts))
+- **Test Scenarios**:
+  - Noise tag removal (`<script>`, `<style>`, `<nav>`, `<footer>`).
+  - Conversion of headings, lists, blockquotes, and links into clean markdown.
+  - Context window safe truncation with `[Content truncated...]` markers.
+
+### 14. [`tool-calling.test.ts`](file:///c:/Users/raghav/Desktop/spare/box/tests/tool-calling.test.ts)
+- **Component Tested**: Autonomous tool dispatching & schemas ([`src/main/browser/web-tools.ts`](file:///c:/Users/raghav/Desktop/spare/box/src/main/browser/web-tools.ts))
+- **Test Scenarios**:
+  - Schema validity against OpenAI Function Calling specification.
+  - Dispatching `search_web`, `fetch_web_page`, `browse_page`, and `take_page_screenshot`.
+  - Input parsing, invalid URL guards, and error resilience.

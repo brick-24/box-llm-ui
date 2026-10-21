@@ -9,22 +9,32 @@ This directory houses the modal dialogs and forms for configuring global applica
 ### 1. [`SettingsModal.tsx`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/settings/SettingsModal.tsx)
 - **Role**: Master Settings Dialog.
 - **Tabs**:
-  1. **General**:
-     - Theme selection (Dark, Light, System).
-     - Typography font size tuning (12px - 18px).
-     - Default system prompt.
-     - Default generation parameters (Temperature slider 0.0 - 2.0, Max output tokens presets up to 1,000,000, Context Warning Limit presets up to 2,000,000).
-  2. **Providers**:
+  1. **Providers**:
      - Lists all configured providers with active status indicators.
      - Actions: Set as Active, Edit, Delete, or Add New Provider.
-  3. **Data & Storage**:
+  2. **General**:
+     - Theme selection (Dark, Light, System).
+     - Typography font size tuning (Compact, Default, Comfort).
+     - Message sending shortcut toggle (Enter vs. Ctrl+Enter).
+  3. **Defaults & Generation**:
+     - Default system instructions.
+     - Default temperature slider (0.0 - 1.5).
+     - Default max output tokens with quick jump buttons (up to 1M+ tokens).
+     - Context warning limit configuration.
+  4. **Web Browsing**:
+     - Default web browsing behavior toggle on new chats.
+     - Search engine provider selection: **DuckDuckGo** (Free / zero-config HTML scraper), **Brave Search**, **Tavily Search**, and **Serper (Google Search)**.
+     - Secure local API key storage for external search providers.
+     - Max search results slider (3 to 10 results).
+     - Interactive search connection tester verifying queries and rendering live results in real-time.
+  5. **Diagnostics & Logs**:
+     - Live log stream viewer with level filters (`info`, `warn`, `error`) and category tags (`api`, `stream`, `storage`, `document`).
+     - Real-time diagnostic log stream from the Electron main process.
+  6. **Data & Backup**:
      - Database location and stats.
      - Full database export (`Export Backup JSON`).
      - Restore from backup (`Import JSON`).
-     - Danger zone: Clear all conversations and reset settings.
-  4. **Diagnostics**:
-     - Live log stream viewer with level filters (`info`, `warn`, `error`) and category tags (`api`, `stream`, `storage`).
-     - Real-time diagnostic log stream from the Electron main process.
+     - Factory reset ("Danger Zone"): Clear all conversations, messages, providers, and settings.
 
 ---
 

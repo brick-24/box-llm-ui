@@ -47,6 +47,11 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   WINDOW_IS_MAXIMIZED: 'window:is-maximized',
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
+
+  // Browser & Web Surfing
+  BROWSER_VIEW_PAGE: 'browser:view-page',
+  BROWSER_SEARCH_TEST: 'browser:search-test',
+  TOOL_CALL_UPDATE: 'chat:tool-call-update',
 };
 ```
 
@@ -65,4 +70,8 @@ export const IPC_CHANNELS = {
     - Returns provider lists with decrypted flags so the UI knows an API key is configured without exposing raw secrets.
     - Connects to provider `/models` endpoints to list available models.
   - **Documents**: Opens native file dialogs and runs text/image extraction.
+  - **Browser & Web Surfing**:
+    - `BROWSER_VIEW_PAGE`: Uses sandboxed Chromium off-screen window or reader fetcher to extract page text and capture high-res PNG screenshots.
+    - `BROWSER_SEARCH_TEST`: Executes diagnostic web searches using configured search providers (DuckDuckGo, Brave, Tavily, Serper).
+    - `TOOL_CALL_UPDATE`: Streams real-time tool state changes (`running`, `completed`, `error`) to the renderer.
   - **Backup & Restore**: Exports full database state to portable JSON and imports backup snapshots.

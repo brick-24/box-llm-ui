@@ -107,4 +107,30 @@ describe('SSE Stream Parser', () => {
     expect(parser.getFullReasoning()).toBe('Thinking step 1...');
     expect(parser.getFullText()).toBe('Final answer.');
   });
+
+  it('captures finish_reason length when maximum token limit is hit during streaming', () => {
+    let capturedFinishReason: string | undefined;
+    let completedText = '';
+
+    const parser = createSseStreamParser({
+      onDelta: () => {},
+      onDone: (fullText, _usage, finishReason) => {
+        completedText = fullText;
+        capturedFinishReason = finishReason;
+      },
+      onError: () => {},
+    });
+
+    const chunk1 = 'data: {"choices":[{"delta":{"content":"Truncated response due to "},"finish_reason":null}]}\n\n';
+    const chunk2 = 'data: {"choices":[{"delta":{"content":"max tokens"},"finish_reason":"length"}]}\n\n';
+    const chunk3 = 'data: [DONE]\n\n';
+
+    parser.feed(chunk1);
+    parser.feed(chunk2);
+    parser.feed(chunk3);
+
+    expect(completedText).toBe('Truncated response due to max tokens');
+    expect(capturedFinishReason).toBe('length');
+    expect(parser.getFinishReason()).toBe('length');
+  });
 });

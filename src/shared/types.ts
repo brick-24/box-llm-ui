@@ -100,6 +100,7 @@ export interface ChatMessage {
   errorMessage?: string;
   tokenUsage?: TokenUsage;
   latencyMs?: number;
+  finishReason?: string;
   createdAt: number;
   updatedAt: number;
 }

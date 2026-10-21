@@ -4,6 +4,7 @@ import {
   getModelQuickTokenStops,
   clampOutputTokens,
   formatTokensCompact,
+  isMaxTokensHit,
 } from '../src/shared/model-limits';
 
 describe('Model Token Limits & Resolution', () => {
@@ -121,5 +122,32 @@ describe('Model Token Limits & Resolution', () => {
     expect(formatTokensCompact(4096)).toBe('4K');
     expect(formatTokensCompact(8192)).toBe('8K');
     expect(formatTokensCompact(500)).toBe('500');
+  });
+
+  it('accurately identifies when maximum tokens limit has been reached from provider finish reasons', () => {
+    // OpenAI / OpenRouter / Mistral / DeepSeek style
+    expect(isMaxTokensHit('length')).toBe(true);
+    expect(isMaxTokensHit('LENGTH')).toBe(true);
+
+    // Anthropic / Claude style
+    expect(isMaxTokensHit('max_tokens')).toBe(true);
+    expect(isMaxTokensHit('max-tokens')).toBe(true);
+
+    // Google Gemini style
+    expect(isMaxTokensHit('MAX_TOKENS')).toBe(true);
+
+    // OpenAI Responses / alternative formats
+    expect(isMaxTokensHit('max_output_tokens')).toBe(true);
+    expect(isMaxTokensHit('token_limit')).toBe(true);
+    expect(isMaxTokensHit('model_length')).toBe(true);
+
+    // Natural stops or user actions should NOT be flagged as max tokens hit
+    expect(isMaxTokensHit('stop')).toBe(false);
+    expect(isMaxTokensHit('end_turn')).toBe(false);
+    expect(isMaxTokensHit('cancelled')).toBe(false);
+    expect(isMaxTokensHit('tool_calls')).toBe(false);
+    expect(isMaxTokensHit('content_filter')).toBe(false);
+    expect(isMaxTokensHit(undefined)).toBe(false);
+    expect(isMaxTokensHit('')).toBe(false);
   });
 });

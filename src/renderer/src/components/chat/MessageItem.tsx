@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Trash2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Layers,
   Edit3,
@@ -13,6 +14,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { ChatMessage } from '@shared/types';
+import { isMaxTokensHit } from '@shared/model-limits';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { AttachmentChip } from './AttachmentChip';
 import { ThinkingAccordion } from './ThinkingAccordion';
@@ -35,7 +37,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onEditAndBranch,
   onRegenerate,
 }) => {
-  const { retryMessage, deleteMessage } = useChatStore();
+  const { sendMessage, retryMessage, deleteMessage } = useChatStore();
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(message.content);
@@ -44,6 +46,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const isStreaming = message.status === 'streaming';
   const isError = message.status === 'error';
   const isStopped = message.status === 'stopped';
+  const hasHitMaxTokens = !isUser && !isStreaming && isMaxTokensHit(message.finishReason);
 
   // Parse chain-of-thought vs main response content for assistant messages
   const { reasoning, content: displayContent, isThinking } = !isUser
@@ -245,6 +248,50 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
+          {/* Maximum Tokens Hit Message */}
+          {hasHitMaxTokens && (
+            <div
+              data-testid="max-tokens-warning"
+              className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start space-x-2.5 shadow-xs select-none"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div className="flex-1 space-y-1.5">
+                <div className="flex items-center space-x-2">
+                  <span className="font-semibold text-amber-950 dark:text-amber-100">
+                    Maximum Tokens Reached
+                  </span>
+                  {message.tokenUsage?.completionTokens && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-200 font-medium">
+                      {message.tokenUsage.completionTokens.toLocaleString()} tokens outputted
+                    </span>
+                  )}
+                </div>
+                <p className="text-amber-800/90 dark:text-amber-300/90 leading-relaxed text-[11px]">
+                  The maximum tokens outputted have been hit. The model reached its output token limit and stopped generating before completing the full response.
+                </p>
+                <div className="pt-0.5 flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => sendMessage('Continue from where you left off.')}
+                    className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-950 dark:text-amber-100 font-medium transition-colors cursor-pointer"
+                  >
+                    <span>Continue Generating</span>
+                  </button>
+                  {onRegenerate && (
+                    <button
+                      type="button"
+                      onClick={() => onRegenerate()}
+                      className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-secondary hover:bg-accent text-secondary-foreground font-medium border border-border transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Regenerate</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Token Usage Badge */}
           {message.tokenUsage && (
             <div className="mt-2.5 flex items-center space-x-1.5 text-[10px] text-muted-foreground font-mono select-none bg-secondary/40 border border-border px-2 py-0.5 rounded w-fit">
@@ -253,6 +300,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 Tokens: {message.tokenUsage.promptTokens ?? '?'} in / {message.tokenUsage.completionTokens ?? '?'} out
                 {message.tokenUsage.totalTokens ? ` (${message.tokenUsage.totalTokens} total)` : ''}
               </span>
+              {hasHitMaxTokens && (
+                <span className="ml-1 px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-semibold">
+                  (Max tokens hit)
+                </span>
+              )}
             </div>
           )}
 

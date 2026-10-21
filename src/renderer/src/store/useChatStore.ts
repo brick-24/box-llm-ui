@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   Conversation,
   ChatMessage,
+  MessageStatus,
   MessageAttachment,
   StreamChunkEvent,
   StreamEndEvent,
@@ -92,7 +93,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             );
           } else {
             const lastIdx = state.allMessages.findLastIndex(
-              (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
             );
             if (lastIdx !== -1) {
               nextAll = [...state.allMessages];
@@ -154,12 +155,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     status: finalStatus,
                     tokenUsage,
                     latencyMs,
+                    finishReason,
                   }
                 : m
             );
           } else {
             const lastIdx = state.allMessages.findLastIndex(
-              (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
             );
             if (lastIdx !== -1) {
               nextAll = [...state.allMessages];
@@ -172,6 +174,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 status: finalStatus,
                 tokenUsage,
                 latencyMs,
+                finishReason,
               };
             } else {
               return { isStreaming: false, streamingMessageId: null };
@@ -206,18 +209,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           if (hasTarget) {
             nextAll = state.allMessages.map((m) =>
-              m.id === messageId ? { ...m, status: 'error', errorMessage: error } : m
+              m.id === messageId ? { ...m, status: 'error' as MessageStatus, errorMessage: error } : m
             );
           } else {
             const lastIdx = state.allMessages.findLastIndex(
-              (m) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
             );
             if (lastIdx !== -1) {
               nextAll = [...state.allMessages];
               nextAll[lastIdx] = {
                 ...nextAll[lastIdx],
                 id: messageId,
-                status: 'error',
+                status: 'error' as MessageStatus,
                 errorMessage: error,
               };
             } else {
@@ -459,9 +462,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ conversations: updatedConvs });
     } catch (err: any) {
       set((state) => {
-        const nextAllMessages = state.allMessages.map((m) =>
+        const nextAllMessages: ChatMessage[] = state.allMessages.map((m) =>
           m.id === tempAssistantMsg.id
-            ? { ...m, status: 'error', errorMessage: err.message || 'Failed to send message' }
+            ? { ...m, status: 'error' as MessageStatus, errorMessage: err.message || 'Failed to send message' }
             : m
         );
         const fresh = buildBranchTree(nextAllMessages, state.activeBranchMap);
@@ -572,9 +575,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ conversations: updatedConvs });
     } catch (err: any) {
       set((state) => {
-        const nextAllMessages = state.allMessages.map((m) =>
+        const nextAllMessages: ChatMessage[] = state.allMessages.map((m) =>
           m.id === newAssistantMsgId
-            ? { ...m, status: 'error', errorMessage: err.message || 'Failed to send message' }
+            ? { ...m, status: 'error' as MessageStatus, errorMessage: err.message || 'Failed to send message' }
             : m
         );
         const recomputed = buildBranchTree(nextAllMessages, state.activeBranchMap);
@@ -685,9 +688,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ conversations: updatedConvs });
     } catch (err: any) {
       set((state) => {
-        const nextAllMessages = state.allMessages.map((m) =>
+        const nextAllMessages: ChatMessage[] = state.allMessages.map((m) =>
           m.id === newAssistantMsgId
-            ? { ...m, status: 'error', errorMessage: err.message || 'Failed to regenerate response' }
+            ? { ...m, status: 'error' as MessageStatus, errorMessage: err.message || 'Failed to regenerate response' }
             : m
         );
         const recomputed = buildBranchTree(nextAllMessages, state.activeBranchMap);

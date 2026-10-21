@@ -1,4 +1,4 @@
-import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser';
+import { createParser } from 'eventsource-parser';
 import { TokenUsage } from '../../shared/types';
 
 export interface ParseOptions {

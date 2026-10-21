@@ -158,6 +158,7 @@ export class ResponsesAdapter implements IProviderAdapter {
     const decoder = new TextDecoder('utf-8');
     let fullText = '';
     let tokenUsage: TokenUsage | undefined;
+    let finishReason = 'stop';
 
     const parser = createParser({
       onEvent: (event: any) => {
@@ -167,7 +168,7 @@ export class ResponsesAdapter implements IProviderAdapter {
             textLength: fullText.length,
             receivedContent: fullText,
           });
-          callbacks.onEnd(fullText, tokenUsage, 'stop');
+          callbacks.onEnd(fullText, tokenUsage, finishReason);
           return;
         }
         try {
@@ -179,12 +180,22 @@ export class ResponsesAdapter implements IProviderAdapter {
           } else if (json.delta?.text) {
             fullText += json.delta.text;
             callbacks.onChunk(json.delta.text, fullText);
-          } else if (json.type === 'response.completed' && json.response?.usage) {
-            tokenUsage = {
-              promptTokens: json.response.usage.input_tokens,
-              completionTokens: json.response.usage.output_tokens,
-              totalTokens: json.response.usage.total_tokens,
-            };
+          } else if (json.type === 'response.completed' || json.response) {
+            if (
+              json.response?.incomplete_details?.reason === 'max_output_tokens' ||
+              json.response?.status === 'incomplete'
+            ) {
+              finishReason = 'length';
+            } else if (json.response?.status === 'completed') {
+              finishReason = 'stop';
+            }
+            if (json.response?.usage) {
+              tokenUsage = {
+                promptTokens: json.response.usage.input_tokens,
+                completionTokens: json.response.usage.output_tokens,
+                totalTokens: json.response.usage.total_tokens,
+              };
+            }
           }
         } catch {}
       },
@@ -201,7 +212,7 @@ export class ResponsesAdapter implements IProviderAdapter {
         textLength: fullText.length,
         receivedContent: fullText,
       });
-      callbacks.onEnd(fullText, tokenUsage, 'stop');
+      callbacks.onEnd(fullText, tokenUsage, finishReason);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         callbacks.onEnd(fullText, tokenUsage, 'cancelled');
@@ -215,7 +226,7 @@ export class ResponsesAdapter implements IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage }> {
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }> {
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint || '/responses');
     const headers = buildAuthHeaders(config);
 
@@ -274,6 +285,11 @@ export class ResponsesAdapter implements IProviderAdapter {
       receivedContent: content,
     });
 
-    return { content };
+    let finishReason = 'stop';
+    if (json.incomplete_details?.reason === 'max_output_tokens' || json.status === 'incomplete') {
+      finishReason = 'length';
+    }
+
+    return { content, finishReason };
   }
 }

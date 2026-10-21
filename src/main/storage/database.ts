@@ -27,10 +27,14 @@ export class AppDatabase {
       path.join(process.resourcesPath || '', 'sql-wasm.wasm'),
     ];
 
-    let wasmBinary: Buffer | undefined;
+    let wasmBinary: ArrayBuffer | undefined;
     for (const p of wasmPaths) {
       if (fs.existsSync(p)) {
-        wasmBinary = fs.readFileSync(p);
+        const fileBuf = fs.readFileSync(p);
+        wasmBinary = fileBuf.buffer.slice(
+          fileBuf.byteOffset,
+          fileBuf.byteOffset + fileBuf.byteLength
+        );
         break;
       }
     }
@@ -90,6 +94,7 @@ export class AppDatabase {
         error_message TEXT,
         token_usage_json TEXT,
         latency_ms INTEGER,
+        finish_reason TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -118,6 +123,9 @@ export class AppDatabase {
     } catch {}
     try {
       this.db.run(`ALTER TABLE messages ADD COLUMN thinking_duration_ms INTEGER;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE messages ADD COLUMN finish_reason TEXT;`);
     } catch {}
 
     // Indexes created after all columns exist
@@ -356,7 +364,7 @@ export class AppDatabase {
   public getMessages(conversationId: string): ChatMessage[] {
     if (!this.db) return [];
     const stmt = this.db.prepare(`
-      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at
       FROM messages WHERE conversation_id = $cid
       ORDER BY created_at ASC
     `);
@@ -377,8 +385,9 @@ export class AppDatabase {
         latencyMs: row[9] !== null ? Number(row[9]) : undefined,
         reasoningContent: (row[10] as string) || undefined,
         thinkingDurationMs: row[11] !== null ? Number(row[11]) : undefined,
-        createdAt: Number(row[12]),
-        updatedAt: Number(row[13]),
+        finishReason: (row[12] as string) || undefined,
+        createdAt: Number(row[13]),
+        updatedAt: Number(row[14]),
       });
     }
     stmt.free();
@@ -388,8 +397,8 @@ export class AppDatabase {
   public saveMessage(msg: ChatMessage): void {
     if (!this.db) return;
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at)
-      VALUES ($id, $cid, $parentId, $role, $content, $attachments, $status, $error, $usage, $latency, $reasoning, $thinkingDuration, $created, $updated)
+      INSERT INTO messages (id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at)
+      VALUES ($id, $cid, $parentId, $role, $content, $attachments, $status, $error, $usage, $latency, $reasoning, $thinkingDuration, $finishReason, $created, $updated)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = $parentId,
         content = $content,
@@ -400,6 +409,7 @@ export class AppDatabase {
         latency_ms = $latency,
         reasoning_content = $reasoning,
         thinking_duration_ms = $thinkingDuration,
+        finish_reason = $finishReason,
         updated_at = $updated
     `);
     stmt.run({
@@ -415,6 +425,7 @@ export class AppDatabase {
       $latency: msg.latencyMs !== undefined ? msg.latencyMs : null,
       $reasoning: msg.reasoningContent || null,
       $thinkingDuration: msg.thinkingDurationMs !== undefined ? msg.thinkingDurationMs : null,
+      $finishReason: msg.finishReason || null,
       $created: msg.createdAt,
       $updated: msg.updatedAt,
     });
@@ -431,7 +442,7 @@ export class AppDatabase {
   public updateMessage(messageId: string, updates: Partial<ChatMessage>): void {
     if (!this.db) return;
     const stmtSelect = this.db.prepare(`
-      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, created_at, updated_at
+      SELECT id, conversation_id, parent_id, role, content, attachments_json, status, error_message, token_usage_json, latency_ms, reasoning_content, thinking_duration_ms, finish_reason, created_at, updated_at
       FROM messages WHERE id = $id
     `);
     stmtSelect.bind({ $id: messageId });
@@ -455,8 +466,9 @@ export class AppDatabase {
       latencyMs: row[9] !== null ? Number(row[9]) : undefined,
       reasoningContent: (row[10] as string) || undefined,
       thinkingDurationMs: row[11] !== null ? Number(row[11]) : undefined,
-      createdAt: Number(row[12]),
-      updatedAt: Number(row[13]),
+      finishReason: (row[12] as string) || undefined,
+      createdAt: Number(row[13]),
+      updatedAt: Number(row[14]),
     };
 
     const merged = { ...existing, ...updates, updatedAt: updates.updatedAt || Date.now() };

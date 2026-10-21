@@ -300,3 +300,21 @@ export function formatTokensCompact(tokens?: number): string {
   }
   return `${tokens}`;
 }
+
+/**
+ * Detects whether a finish reason or completion status indicates that
+ * the maximum output tokens limit was hit.
+ */
+export function isMaxTokensHit(finishReason?: string): boolean {
+  if (!finishReason) return false;
+  const normalized = finishReason.toLowerCase().replace(/[-_]/g, ' ').trim();
+  return (
+    normalized === 'length' ||
+    normalized === 'max tokens' ||
+    normalized === 'max output tokens' ||
+    normalized === 'token limit' ||
+    normalized === 'model length' ||
+    normalized.includes('max token') ||
+    normalized.includes('length')
+  );
+}

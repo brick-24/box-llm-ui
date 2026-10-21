@@ -174,6 +174,7 @@ export class CustomJsonAdapter implements IProviderAdapter {
     const reader = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let fullText = '';
+    let finishReason = 'stop';
     const chunkPath = mapping.streamChunkPath || 'delta.content';
 
     const parser = createParser({
@@ -183,7 +184,7 @@ export class CustomJsonAdapter implements IProviderAdapter {
             textLength: fullText.length,
             receivedContent: fullText,
           });
-          callbacks.onEnd(fullText, undefined, 'stop');
+          callbacks.onEnd(fullText, undefined, finishReason);
           return;
         }
         try {
@@ -192,6 +193,13 @@ export class CustomJsonAdapter implements IProviderAdapter {
           if (delta && typeof delta === 'string') {
             fullText += delta;
             callbacks.onChunk(delta, fullText);
+          }
+          const finish =
+            getByPath(json, 'choices[0].finish_reason') ||
+            getByPath(json, 'finish_reason') ||
+            getByPath(json, 'stop_reason');
+          if (finish && typeof finish === 'string') {
+            finishReason = finish;
           }
         } catch {}
       },
@@ -207,7 +215,7 @@ export class CustomJsonAdapter implements IProviderAdapter {
         textLength: fullText.length,
         receivedContent: fullText,
       });
-      callbacks.onEnd(fullText, undefined, 'stop');
+      callbacks.onEnd(fullText, undefined, finishReason);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         callbacks.onEnd(fullText, undefined, 'cancelled');
@@ -221,7 +229,7 @@ export class CustomJsonAdapter implements IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage }> {
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }> {
     const mapping = config.customMapping || {};
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint);
     const headers = buildAuthHeaders(config);
@@ -278,6 +286,12 @@ export class CustomJsonAdapter implements IProviderAdapter {
       receivedContent: String(content),
     });
 
-    return { content: String(content) };
+    const finish =
+      getByPath(json, 'choices[0].finish_reason') ||
+      getByPath(json, 'finish_reason') ||
+      getByPath(json, 'stop_reason');
+    const finishReason = typeof finish === 'string' ? finish : 'stop';
+
+    return { content: String(content), finishReason };
   }
 }

@@ -114,7 +114,7 @@ export function getAncestorChain(messages: ChatMessage[], targetId: string): Cha
 
   while (currId && messageMap.has(currId) && !visited.has(currId)) {
     visited.add(currId);
-    const msg = messageMap.get(currId)!;
+    const msg: ChatMessage = messageMap.get(currId)!;
     chain.push(msg);
     currId = msg.parentId || null;
   }

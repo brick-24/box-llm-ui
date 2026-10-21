@@ -267,6 +267,13 @@ export class OpenAiAdapter implements IProviderAdapter {
       ...config.customBodyParams,
     };
 
+    if (params.tools && params.tools.length > 0) {
+      body.tools = params.tools;
+      if (params.toolChoice) {
+        body.tool_choice = params.toolChoice;
+      }
+    }
+
     if (isOpenRouter) {
       const freeList = getActiveConversationalFreeModels();
       if (params.model === 'openrouter/free') {
@@ -303,6 +310,7 @@ export class OpenAiAdapter implements IProviderAdapter {
       activeModel: body.model,
       fallbackModels: body.models,
       stream: true,
+      hasTools: Boolean(params.tools?.length),
       maxTokens: body.max_tokens ?? body.max_completion_tokens,
       temperature: body.temperature,
       topP: body.top_p,
@@ -359,18 +367,20 @@ export class OpenAiAdapter implements IProviderAdapter {
       usage?: TokenUsage,
       finishReason?: string,
       reasoningFullText?: string,
-      thinkingDurationMs?: number
+      thinkingDurationMs?: number,
+      toolCalls?: any[]
     ) => {
-      DiagnosticsService.log('info', 'api', `[API Response Body] Stream complete (${fullText.length} chars, reasoning: ${reasoningFullText?.length || 0} chars)`, {
+      DiagnosticsService.log('info', 'api', `[API Response Body] Stream complete (${fullText.length} chars, reasoning: ${reasoningFullText?.length || 0} chars, toolCalls: ${toolCalls?.length || 0})`, {
         model: body.model || params.model,
         finishReason: finishReason || 'stop',
         tokenUsage: usage,
         textLength: fullText.length,
         reasoningLength: reasoningFullText?.length || 0,
         thinkingDurationMs,
+        toolCalls,
         receivedContent: fullText,
       });
-      callbacks.onEnd(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs);
+      callbacks.onEnd(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs, toolCalls);
     };
 
     const contentType = res.headers.get('content-type') || '';
@@ -406,9 +416,15 @@ export class OpenAiAdapter implements IProviderAdapter {
           }
         : undefined;
 
+      const nonStreamToolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
+        id: tc.id,
+        name: tc.function?.name || '',
+        arguments: tc.function?.arguments || '',
+      }));
+
       const finishReason = choice?.finish_reason || 'stop';
       callbacks.onChunk(content, content, reasoning || undefined, reasoning || undefined);
-      handleStreamComplete(content, usage, finishReason, reasoning || undefined);
+      handleStreamComplete(content, usage, finishReason, reasoning || undefined, undefined, nonStreamToolCalls);
       return;
     }
 
@@ -429,7 +445,10 @@ export class OpenAiAdapter implements IProviderAdapter {
         }
         callbacks.onChunk(delta, fullText, reasoningDelta, reasoningFullText);
       },
-      onDone: (fullText, usage, finishReason, reasoningFullText) => {
+      onToolCallDelta: (toolCalls) => {
+        callbacks.onToolCallDelta?.(toolCalls);
+      },
+      onDone: (fullText, usage, finishReason, reasoningFullText, toolCalls) => {
         streamCompleted = true;
         if (thinkingStartTime && !thinkingEndTime) {
           thinkingEndTime = Date.now();
@@ -438,7 +457,7 @@ export class OpenAiAdapter implements IProviderAdapter {
           thinkingStartTime && thinkingEndTime
             ? Math.max(0, thinkingEndTime - thinkingStartTime)
             : undefined;
-        handleStreamComplete(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs);
+        handleStreamComplete(fullText, usage, finishReason, reasoningFullText, thinkingDurationMs, toolCalls);
       },
       onError: (err) => {
         callbacks.onError(err);
@@ -535,7 +554,7 @@ export class OpenAiAdapter implements IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }> {
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string; toolCalls?: any[] }> {
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint || '/chat/completions');
     const headers = buildAuthHeaders(config);
 
@@ -557,6 +576,13 @@ export class OpenAiAdapter implements IProviderAdapter {
       stream: false,
       ...config.customBodyParams,
     };
+
+    if (params.tools && params.tools.length > 0) {
+      body.tools = params.tools;
+      if (params.toolChoice) {
+        body.tool_choice = params.toolChoice;
+      }
+    }
 
     if (isOpenRouter) {
       const freeList = getActiveConversationalFreeModels();
@@ -594,6 +620,7 @@ export class OpenAiAdapter implements IProviderAdapter {
       activeModel: body.model,
       fallbackModels: body.models,
       stream: false,
+      hasTools: Boolean(params.tools?.length),
       maxTokens: body.max_tokens ?? body.max_completion_tokens,
       temperature: body.temperature,
       topP: body.top_p,
@@ -634,11 +661,12 @@ export class OpenAiAdapter implements IProviderAdapter {
     }
 
     const json = await res.json();
-    const content = json.choices?.[0]?.message?.content || '';
+    const choice = json.choices?.[0];
+    const content = choice?.message?.content || '';
     const reasoningContent =
-      json.choices?.[0]?.message?.reasoning_content ||
-      json.choices?.[0]?.message?.thought ||
-      json.choices?.[0]?.message?.reasoning ||
+      choice?.message?.reasoning_content ||
+      choice?.message?.thought ||
+      choice?.message?.reasoning ||
       undefined;
     const tokenUsage: TokenUsage | undefined = json.usage ? {
       promptTokens: json.usage.prompt_tokens,
@@ -646,16 +674,23 @@ export class OpenAiAdapter implements IProviderAdapter {
       totalTokens: json.usage.total_tokens,
     } : undefined;
 
-    DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars, reasoning: ${reasoningContent?.length || 0} chars)`, {
+    const rawToolCalls = choice?.message?.tool_calls?.map((tc: any) => ({
+      id: tc.id,
+      name: tc.function?.name || '',
+      arguments: tc.function?.arguments || '',
+    }));
+
+    DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars, reasoning: ${reasoningContent?.length || 0} chars, toolCalls: ${rawToolCalls?.length || 0})`, {
       model: body.model || params.model,
       tokenUsage,
       textLength: content.length,
       reasoningLength: reasoningContent?.length || 0,
+      toolCalls: rawToolCalls,
       receivedContent: content,
     });
 
-    const finishReason = json.choices?.[0]?.finish_reason || 'stop';
+    const finishReason = choice?.finish_reason || 'stop';
 
-    return { content, tokenUsage, reasoningContent, finishReason };
+    return { content, tokenUsage, reasoningContent, finishReason, toolCalls: rawToolCalls };
   }
 }

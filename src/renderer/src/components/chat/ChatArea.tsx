@@ -14,6 +14,7 @@ import { MessageItem } from './MessageItem';
 import { MessageComposer } from './MessageComposer';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AttachmentModal } from './AttachmentModal';
+import { WebBrowserDrawer } from './WebBrowserDrawer';
 import {
   resolveModelLimits,
   getModelQuickTokenStops,
@@ -467,6 +468,9 @@ export const ChatArea: React.FC = () => {
 
       {/* Modal for viewing full attachment text & chunks */}
       <AttachmentModal />
+
+      {/* Slide-over Web Browser Drawer */}
+      <WebBrowserDrawer />
     </div>
   );
 };

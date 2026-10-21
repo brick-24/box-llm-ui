@@ -9,8 +9,11 @@ import {
   ProviderConfig,
   MessageAttachment,
   TokenUsage,
+  ToolCallItem,
+  WebCitation,
 } from '../../shared/types';
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
+import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
   if (!text) return false;
@@ -33,6 +36,7 @@ export interface SendMessageOptions {
   userMessageId?: string;
   parentId?: string | null;
   isRegeneration?: boolean;
+  webBrowsing?: boolean;
 }
 
 export class ChatEngine {
@@ -243,6 +247,14 @@ export class ChatEngine {
     const allMessages = this.db.getMessages(conversationId);
     const history = ChatEngine.resolveBranchHistory(allMessages, effectiveUserMsgId);
 
+    const isWebBrowsing = options.webBrowsing !== undefined
+      ? options.webBrowsing
+      : Boolean(conv.webBrowsingEnabled);
+
+    const executedToolCalls: ToolCallItem[] = [];
+    const accumulatedCitations: WebCitation[] = [];
+    const settings = this.db.getSettings();
+
     const adapter = AdapterFactory.getAdapter(config.protocol);
     const startTime = Date.now();
 
@@ -256,146 +268,248 @@ export class ChatEngine {
     while (attempt <= maxRetries && !success) {
       if (controller.signal.aborted) break;
 
-      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}]`, {
+      const trajectory: ChatMessage[] = [...history];
+      const maxWebTurns = isWebBrowsing ? 6 : 1;
+      let webTurn = 0;
+
+      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing})`, {
         endpoint: config.chatEndpoint,
         protocol: config.protocol,
         model: currentModel,
-        messageCount: history.length,
+        messageCount: trajectory.length,
         streaming: config.streamingEnabled,
-        messagesPreview: history.slice(-3).map((m) => ({
+        webBrowsing: isWebBrowsing,
+        messagesPreview: trajectory.slice(-3).map((m) => ({
           role: m.role,
           content: m.content.length > 300 ? `${m.content.slice(0, 300)}...` : m.content,
         })),
       });
 
       try {
-        if (config.streamingEnabled) {
-          await adapter.streamMessage(
-            config,
-            {
-              messages: history,
-              model: currentModel,
-              systemPrompt: options.systemPrompt || conv.systemPrompt,
-              temperature: options.temperature ?? conv.temperature,
-              maxTokens: options.maxTokens ?? conv.maxTokens,
-              topP: options.topP ?? conv.topP,
-            },
-            {
-              onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
-                if (win && !controller.signal.aborted) {
-                  win.webContents.send('chat:stream-chunk', {
-                    conversationId,
-                    messageId: assistantMsgId,
-                    delta,
-                    fullText,
-                    reasoningDelta,
-                    reasoningFullText,
-                  });
-                }
-              },
-              onEnd: (fullText, tokenUsage, finishReason, reasoningFullText, thinkingDurationMs) => {
-                const latencyMs = Date.now() - startTime;
-                const status = finishReason === 'cancelled' ? 'stopped' : 'completed';
-                finalFullText = fullText;
-                finalStatus = status;
+        while (webTurn < maxWebTurns && !controller.signal.aborted) {
+          webTurn++;
+          let turnToolCalls: any[] | undefined;
+          let turnFullText = '';
+          let turnUsage: TokenUsage | undefined;
+          let turnFinishReason: string | undefined;
+          let turnReasoning: string | undefined;
+          let turnThinkingDuration: number | undefined;
 
-                this.db.updateMessage(assistantMsgId, {
-                  content: fullText,
-                  reasoningContent: reasoningFullText,
-                  thinkingDurationMs,
-                  status,
-                  tokenUsage,
-                  latencyMs,
-                  finishReason,
-                  updatedAt: Date.now(),
+          if (config.streamingEnabled) {
+            await adapter.streamMessage(
+              config,
+              {
+                messages: trajectory,
+                model: currentModel,
+                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                temperature: options.temperature ?? conv.temperature,
+                maxTokens: options.maxTokens ?? conv.maxTokens,
+                topP: options.topP ?? conv.topP,
+                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+              },
+              {
+                onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
+                  if (win && !controller.signal.aborted) {
+                    win.webContents.send('chat:stream-chunk', {
+                      conversationId,
+                      messageId: assistantMsgId,
+                      delta,
+                      fullText,
+                      reasoningDelta,
+                      reasoningFullText,
+                    });
+                  }
+                },
+                onEnd: (fullText, tokenUsage, finishReason, reasoningFullText, thinkingDurationMs, toolCalls) => {
+                  turnFullText = fullText;
+                  turnUsage = tokenUsage;
+                  turnFinishReason = finishReason;
+                  turnReasoning = reasoningFullText;
+                  turnThinkingDuration = thinkingDurationMs;
+                  turnToolCalls = toolCalls;
+                },
+                onError: (err) => {
+                  throw err;
+                },
+              },
+              controller.signal
+            );
+          } else {
+            // Non-streaming fallback
+            const resp = await adapter.sendMessage(
+              config,
+              {
+                messages: trajectory,
+                model: currentModel,
+                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                temperature: options.temperature ?? conv.temperature,
+                maxTokens: options.maxTokens ?? conv.maxTokens,
+                topP: options.topP ?? conv.topP,
+                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+              },
+              controller.signal
+            );
+
+            turnFullText = resp.content;
+            turnUsage = resp.tokenUsage;
+            turnFinishReason = resp.finishReason || 'stop';
+            turnReasoning = resp.reasoningContent;
+            turnToolCalls = resp.toolCalls;
+
+            if (win && !controller.signal.aborted) {
+              win.webContents.send('chat:stream-chunk', {
+                conversationId,
+                messageId: assistantMsgId,
+                delta: resp.content,
+                fullText: resp.content,
+                reasoningDelta: resp.reasoningContent,
+                reasoningFullText: resp.reasoningContent,
+              });
+            }
+          }
+
+          if (controller.signal.aborted) break;
+
+          // Check if tools were requested
+          if (isWebBrowsing && turnToolCalls && turnToolCalls.length > 0 && webTurn < maxWebTurns) {
+            const currentTurnItems: ToolCallItem[] = [];
+
+            for (const tc of turnToolCalls) {
+              let parsedInput: Record<string, any> = {};
+              try {
+                parsedInput = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments || {};
+              } catch {
+                parsedInput = { raw: tc.arguments };
+              }
+
+              const item: ToolCallItem = {
+                id: tc.id || `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                name: tc.name,
+                input: parsedInput,
+                status: 'running',
+              };
+              currentTurnItems.push(item);
+              executedToolCalls.push(item);
+
+              if (win) {
+                win.webContents.send('chat:tool-call-update', {
+                  conversationId,
+                  messageId: assistantMsgId,
+                  toolCall: item,
                 });
+              }
 
-                if (win) {
-                  win.webContents.send('chat:stream-end', {
-                    conversationId,
-                    messageId: assistantMsgId,
-                    fullText,
-                    reasoningFullText,
-                    thinkingDurationMs,
-                    tokenUsage,
-                    latencyMs,
-                    finishReason,
-                  });
+              // Execute tool
+              const toolStart = Date.now();
+              try {
+                const output = await executeWebTool(item.name, item.input, settings);
+                item.durationMs = Date.now() - toolStart;
+                item.output = output.result;
+                item.status = 'completed';
+                if (output.citations) {
+                  accumulatedCitations.push(...output.citations);
                 }
+              } catch (err: any) {
+                item.durationMs = Date.now() - toolStart;
+                item.status = 'error';
+                item.error = err.message || String(err);
+                item.output = { error: err.message || String(err) };
+              }
 
-                DiagnosticsService.log('info', 'api', `Response complete (${latencyMs}ms)`, {
-                  model: currentModel,
-                  finishReason,
-                  tokenUsage,
-                  textLength: fullText.length,
-                  reasoningLength: reasoningFullText?.length || 0,
-                  thinkingDurationMs,
-                  responsePreview: fullText.length > 1000 ? `${fullText.slice(0, 1000)}...` : fullText,
+              if (win) {
+                win.webContents.send('chat:tool-call-update', {
+                  conversationId,
+                  messageId: assistantMsgId,
+                  toolCall: item,
                 });
-              },
-              onError: (err) => {
-                throw err;
-              },
-            },
-            controller.signal
-          );
-        } else {
-          // Non-streaming fallback
-          const resp = await adapter.sendMessage(
-            config,
-            {
-              messages: history,
-              model: currentModel,
-              systemPrompt: options.systemPrompt || conv.systemPrompt,
-              temperature: options.temperature ?? conv.temperature,
-              maxTokens: options.maxTokens ?? conv.maxTokens,
-              topP: options.topP ?? conv.topP,
-            },
-            controller.signal
-          );
+              }
+            }
+
+            // Append assistant tool_calls message and tool responses to trajectory
+            trajectory.push({
+              id: crypto.randomUUID(),
+              conversationId,
+              role: 'assistant',
+              content: turnFullText,
+              toolCalls: currentTurnItems,
+              status: 'completed',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+
+            for (const item of currentTurnItems) {
+              trajectory.push({
+                id: crypto.randomUUID(),
+                conversationId,
+                role: 'tool',
+                toolCallId: item.id,
+                content: typeof item.output === 'string' ? item.output : JSON.stringify(item.output),
+                status: 'completed',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              });
+            }
+
+            // Loop to next turn so model synthesizes final answer
+            continue;
+          }
+
+          // Final response
+          finalFullText = turnFullText;
+          finalStatus = turnFinishReason === 'cancelled' ? 'stopped' : 'completed';
+
+          // Deduplicate citations by URL
+          const uniqueCitations: WebCitation[] = [];
+          const seenUrls = new Set<string>();
+          for (const c of accumulatedCitations) {
+            if (c.url && !seenUrls.has(c.url)) {
+              seenUrls.add(c.url);
+              uniqueCitations.push(c);
+            }
+          }
 
           const latencyMs = Date.now() - startTime;
-          finalFullText = resp.content;
-          finalStatus = 'completed';
-          const finishReason = resp.finishReason || 'stop';
-
           this.db.updateMessage(assistantMsgId, {
-            content: resp.content,
-            reasoningContent: resp.reasoningContent,
-            status: 'completed',
-            tokenUsage: resp.tokenUsage,
+            content: finalFullText,
+            reasoningContent: turnReasoning,
+            thinkingDurationMs: turnThinkingDuration,
+            status: finalStatus as any,
+            tokenUsage: turnUsage,
             latencyMs,
-            finishReason,
+            finishReason: turnFinishReason,
+            toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+            citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
             updatedAt: Date.now(),
           });
 
           if (win) {
-            win.webContents.send('chat:stream-chunk', {
-              conversationId,
-              messageId: assistantMsgId,
-              delta: resp.content,
-              fullText: resp.content,
-              reasoningDelta: resp.reasoningContent,
-              reasoningFullText: resp.reasoningContent,
-            });
             win.webContents.send('chat:stream-end', {
               conversationId,
               messageId: assistantMsgId,
-              fullText: resp.content,
-              reasoningFullText: resp.reasoningContent,
-              tokenUsage: resp.tokenUsage,
+              fullText: finalFullText,
+              reasoningFullText: turnReasoning,
+              thinkingDurationMs: turnThinkingDuration,
+              tokenUsage: turnUsage,
               latencyMs,
-              finishReason,
+              finishReason: turnFinishReason,
+              toolCalls: executedToolCalls.length > 0 ? executedToolCalls : undefined,
+              citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
             });
           }
 
           DiagnosticsService.log('info', 'api', `Response complete (${latencyMs}ms)`, {
             model: currentModel,
-            finishReason,
-            tokenUsage: resp.tokenUsage,
-            textLength: resp.content.length,
-            responsePreview: resp.content.length > 1000 ? `${resp.content.slice(0, 1000)}...` : resp.content,
+            finishReason: turnFinishReason,
+            tokenUsage: turnUsage,
+            textLength: finalFullText.length,
+            reasoningLength: turnReasoning?.length || 0,
+            thinkingDurationMs: turnThinkingDuration,
+            toolCallCount: executedToolCalls.length,
+            citationCount: uniqueCitations.length,
+            responsePreview: finalFullText.length > 1000 ? `${finalFullText.slice(0, 1000)}...` : finalFullText,
           });
+
+          break; // Exit webTurn loop
         }
 
         // Check if the upstream provider misrouted to a safety evaluation classifier

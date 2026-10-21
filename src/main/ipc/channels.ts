@@ -40,8 +40,13 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: 'window:close',
   OPEN_EXTERNAL: 'shell:open-external',
 
-  // Stream Events (Main -> Renderer)
+  // Stream & Tool Events (Main -> Renderer)
   STREAM_CHUNK: 'chat:stream-chunk',
   STREAM_END: 'chat:stream-end',
   STREAM_ERROR: 'chat:stream-error',
+  TOOL_CALL_UPDATE: 'chat:tool-call-update',
+
+  // Browser & Web Surfing
+  BROWSER_VIEW_PAGE: 'browser:view-page',
+  BROWSER_SEARCH_TEST: 'browser:search-test',
 } as const;

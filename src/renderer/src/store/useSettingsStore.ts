@@ -5,10 +5,10 @@ import { DEFAULT_SETTINGS } from '@shared/constants';
 interface SettingsState {
   settings: AppSettings;
   isSettingsOpen: boolean;
-  activeTab: 'providers' | 'general' | 'generation' | 'diagnostics' | 'backup';
+  activeTab: 'providers' | 'general' | 'generation' | 'web' | 'diagnostics' | 'backup';
   loadSettings: () => Promise<void>;
   updateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
-  openSettings: (tab?: 'providers' | 'general' | 'generation' | 'diagnostics' | 'backup') => void;
+  openSettings: (tab?: 'providers' | 'general' | 'generation' | 'web' | 'diagnostics' | 'backup') => void;
   closeSettings: () => void;
 }
 

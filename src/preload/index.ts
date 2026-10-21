@@ -6,6 +6,7 @@ import {
   StreamChunkEvent,
   StreamEndEvent,
   StreamErrorEvent,
+  ToolCallUpdateEvent,
   MessageAttachment,
 } from '../shared/types';
 import { SendMessageOptions } from '../main/engine/chat-engine';
@@ -40,6 +41,10 @@ export interface ElectronAPI {
   processFile: (filePath: string) => Promise<MessageAttachment>;
   processBuffer: (base64: string, filename: string, mimeType: string) => Promise<MessageAttachment>;
 
+  // Browser & Web Surfing
+  browsePage: (url: string, takeScreenshot?: boolean) => Promise<any>;
+  searchWeb: (query: string) => Promise<any[]>;
+
   // Settings & Diagnostics
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>;
@@ -57,6 +62,7 @@ export interface ElectronAPI {
   onStreamChunk: (callback: (data: StreamChunkEvent) => void) => () => void;
   onStreamEnd: (callback: (data: StreamEndEvent) => void) => () => void;
   onStreamError: (callback: (data: StreamErrorEvent) => void) => () => void;
+  onToolCallUpdate: (callback: (data: ToolCallUpdateEvent) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -85,6 +91,10 @@ const api: ElectronAPI = {
   processBuffer: (base64, filename, mimeType) =>
     ipcRenderer.invoke(IPC_CHANNELS.DOCUMENTS_PROCESS_BUFFER, base64, filename, mimeType),
 
+  browsePage: (url, takeScreenshot = true) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BROWSER_VIEW_PAGE, url, takeScreenshot),
+  searchWeb: (query) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_SEARCH_TEST, query),
+
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
   saveSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
   getDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
@@ -110,6 +120,11 @@ const api: ElectronAPI = {
     const handler = (_event: any, data: StreamErrorEvent) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.STREAM_ERROR, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.STREAM_ERROR, handler);
+  },
+  onToolCallUpdate: (callback) => {
+    const handler = (_event: any, data: ToolCallUpdateEvent) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.TOOL_CALL_UPDATE, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TOOL_CALL_UPDATE, handler);
   },
 };
 

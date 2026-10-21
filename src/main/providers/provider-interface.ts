@@ -14,12 +14,22 @@ export interface ChatRequestParams {
   maxTokens?: number;
   topP?: number;
   stream?: boolean;
+  tools?: any[];
+  toolChoice?: any;
 }
 
 export interface StreamCallbacks {
   onChunk: (delta: string, fullText: string, reasoningDelta?: string, reasoningFullText?: string) => void;
-  onEnd: (fullText: string, usage?: TokenUsage, finishReason?: string, reasoningFullText?: string, thinkingDurationMs?: number) => void;
+  onEnd: (
+    fullText: string,
+    usage?: TokenUsage,
+    finishReason?: string,
+    reasoningFullText?: string,
+    thinkingDurationMs?: number,
+    toolCalls?: any[]
+  ) => void;
   onError: (err: Error) => void;
+  onToolCallDelta?: (toolCalls: any[]) => void;
 }
 
 export interface IProviderAdapter {
@@ -35,7 +45,7 @@ export interface IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }>;
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string; toolCalls?: any[] }>;
 }
 
 export function resolveEndpoint(baseUrl: string, endpoint: string): string {
@@ -120,6 +130,31 @@ export function formatMessagesWithAttachments(
   }
 
   for (const msg of messages) {
+    if (msg.role === 'tool') {
+      formatted.push({
+        role: 'tool',
+        tool_call_id: msg.toolCallId || msg.id,
+        content: msg.content,
+      });
+      continue;
+    }
+
+    if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+      formatted.push({
+        role: 'assistant',
+        content: msg.content || null,
+        tool_calls: msg.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+          },
+        })),
+      });
+      continue;
+    }
+
     let textContent = msg.content || '';
     const images: string[] = [];
 

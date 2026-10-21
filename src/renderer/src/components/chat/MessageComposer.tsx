@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   UploadCloud,
   Loader2,
+  Globe,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useProviderStore } from '../../store/useProviderStore';
@@ -21,6 +22,8 @@ export const MessageComposer: React.FC = () => {
     attachments,
     addAttachment,
     removeAttachment,
+    isWebBrowsing,
+    toggleWebBrowsing,
   } = useChatStore();
 
   const { settings } = useSettingsStore();
@@ -279,6 +282,26 @@ export const MessageComposer: React.FC = () => {
                   <Paperclip className="w-3.5 h-3.5" />
                 )}
                 <span className="hidden sm:inline">Attach</span>
+              </button>
+
+              {/* Web Surfing Toggle */}
+              <button
+                type="button"
+                onClick={toggleWebBrowsing}
+                disabled={isStreaming}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  isWebBrowsing
+                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30 shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent'
+                }`}
+                title={isWebBrowsing ? 'Web browsing active (Click to disable)' : 'Enable web browsing & search'}
+                aria-label="Toggle Web Browsing"
+              >
+                <Globe className={`w-3.5 h-3.5 ${isWebBrowsing ? 'text-blue-400' : ''}`} />
+                <span className="hidden sm:inline">Web</span>
+                {isWebBrowsing && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                )}
               </button>
 
               {totalAttachmentTokens > 0 && (

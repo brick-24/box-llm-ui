@@ -27,10 +27,14 @@ export class AppDatabase {
       path.join(process.resourcesPath || '', 'sql-wasm.wasm'),
     ];
 
-    let wasmBinary: Buffer | undefined;
+    let wasmBinary: ArrayBuffer | undefined;
     for (const p of wasmPaths) {
       if (fs.existsSync(p)) {
-        wasmBinary = fs.readFileSync(p);
+        const fileBuf = fs.readFileSync(p);
+        wasmBinary = fileBuf.buffer.slice(
+          fileBuf.byteOffset,
+          fileBuf.byteOffset + fileBuf.byteLength
+        );
         break;
       }
     }

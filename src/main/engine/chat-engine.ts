@@ -66,7 +66,7 @@ export class ChatEngine {
 
     while (currId && messageMap.has(currId) && !visited.has(currId)) {
       visited.add(currId);
-      const msg = messageMap.get(currId)!;
+      const msg: ChatMessage = messageMap.get(currId)!;
       branchChain.push(msg);
       currId = msg.parentId || null;
     }

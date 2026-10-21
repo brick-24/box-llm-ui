@@ -35,7 +35,7 @@ export interface IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string }>;
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }>;
 }
 
 export function resolveEndpoint(baseUrl: string, endpoint: string): string {

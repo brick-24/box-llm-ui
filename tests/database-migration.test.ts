@@ -52,6 +52,9 @@ describe('Database Migration Tests', () => {
     try {
       db.run(`ALTER TABLE messages ADD COLUMN thinking_duration_ms INTEGER;`);
     } catch {}
+    try {
+      db.run(`ALTER TABLE messages ADD COLUMN finish_reason TEXT;`);
+    } catch {}
 
     // Then create index on parent_id
     expect(() => {
@@ -59,7 +62,7 @@ describe('Database Migration Tests', () => {
     }).not.toThrow();
 
     // Verify row was preserved and column is queryable
-    const stmt = db.prepare('SELECT id, parent_id, reasoning_content FROM messages WHERE id = $id');
+    const stmt = db.prepare('SELECT id, parent_id, reasoning_content, finish_reason FROM messages WHERE id = $id');
     stmt.bind({ $id: 'm1' });
     expect(stmt.step()).toBe(true);
     const row = stmt.get();
@@ -68,6 +71,7 @@ describe('Database Migration Tests', () => {
     expect(row[0]).toBe('m1');
     expect(row[1]).toBe(null); // parent_id initialized to null
     expect(row[2]).toBe(null); // reasoning_content initialized to null
+    expect(row[3]).toBe(null); // finish_reason initialized to null
     db.close();
   });
 });

@@ -154,6 +154,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     status: finalStatus,
                     tokenUsage,
                     latencyMs,
+                    finishReason,
                   }
                 : m
             );
@@ -172,6 +173,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 status: finalStatus,
                 tokenUsage,
                 latencyMs,
+                finishReason,
               };
             } else {
               return { isStreaming: false, streamingMessageId: null };

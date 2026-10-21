@@ -535,7 +535,7 @@ export class OpenAiAdapter implements IProviderAdapter {
     config: ProviderConfig,
     params: ChatRequestParams,
     signal?: AbortSignal
-  ): Promise<{ content: string; tokenUsage?: TokenUsage }> {
+  ): Promise<{ content: string; tokenUsage?: TokenUsage; reasoningContent?: string; finishReason?: string }> {
     const url = resolveEndpoint(config.baseUrl, config.chatEndpoint || '/chat/completions');
     const headers = buildAuthHeaders(config);
 
@@ -654,6 +654,8 @@ export class OpenAiAdapter implements IProviderAdapter {
       receivedContent: content,
     });
 
-    return { content, tokenUsage, reasoningContent };
+    const finishReason = json.choices?.[0]?.finish_reason || 'stop';
+
+    return { content, tokenUsage, reasoningContent, finishReason };
   }
 }

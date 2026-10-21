@@ -306,6 +306,7 @@ export class ChatEngine {
                   status,
                   tokenUsage,
                   latencyMs,
+                  finishReason,
                   updatedAt: Date.now(),
                 });
 
@@ -356,6 +357,7 @@ export class ChatEngine {
           const latencyMs = Date.now() - startTime;
           finalFullText = resp.content;
           finalStatus = 'completed';
+          const finishReason = resp.finishReason || 'stop';
 
           this.db.updateMessage(assistantMsgId, {
             content: resp.content,
@@ -363,6 +365,7 @@ export class ChatEngine {
             status: 'completed',
             tokenUsage: resp.tokenUsage,
             latencyMs,
+            finishReason,
             updatedAt: Date.now(),
           });
 
@@ -382,13 +385,13 @@ export class ChatEngine {
               reasoningFullText: resp.reasoningContent,
               tokenUsage: resp.tokenUsage,
               latencyMs,
-              finishReason: 'stop',
+              finishReason,
             });
           }
 
           DiagnosticsService.log('info', 'api', `Response complete (${latencyMs}ms)`, {
             model: currentModel,
-            finishReason: 'stop',
+            finishReason,
             tokenUsage: resp.tokenUsage,
             textLength: resp.content.length,
             responsePreview: resp.content.length > 1000 ? `${resp.content.slice(0, 1000)}...` : resp.content,

@@ -83,6 +83,7 @@ export const ChatMessageSchema = z.object({
     totalTokens: z.number().optional(),
   }).optional(),
   latencyMs: z.number().optional(),
+  finishReason: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });

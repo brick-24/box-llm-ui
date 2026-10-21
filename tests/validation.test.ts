@@ -49,12 +49,14 @@ describe('Zod Schema Validation', () => {
       role: 'user',
       content: 'Can you summarize this document?',
       status: 'completed',
+      finishReason: 'length',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     const parsed = ChatMessageSchema.parse(msg);
     expect(parsed.role).toBe('user');
+    expect(parsed.finishReason).toBe('length');
   });
 
   it('validates AppSettings default schema', () => {

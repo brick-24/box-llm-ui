@@ -140,18 +140,39 @@ export function formatMessagesWithAttachments(
     }
 
     if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      formatted.push({
+      const assistantMsg: any = {
         role: 'assistant',
         content: msg.content || null,
-        tool_calls: msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
-          },
-        })),
-      });
+        tool_calls: msg.toolCalls.map((tc) => {
+          const sig = tc.thoughtSignature || msg.thoughtSignature || 'skip_thought_signature_validator';
+          const extra = tc.extraContent || msg.extraContent || {
+            google: {
+              thought_signature: sig,
+            },
+          };
+          return {
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+            },
+            thought_signature: sig,
+            extra_content: extra,
+          };
+        }),
+      };
+
+      const messageSig =
+        msg.thoughtSignature || msg.toolCalls[0]?.thoughtSignature || 'skip_thought_signature_validator';
+      assistantMsg.thought_signature = messageSig;
+      assistantMsg.extra_content = msg.extraContent || {
+        google: {
+          thought_signature: messageSig,
+        },
+      };
+
+      formatted.push(assistantMsg);
       continue;
     }
 

@@ -105,6 +105,8 @@ export interface ToolCallItem {
   error?: string;
   durationMs?: number;
   streamingOutput?: string;
+  thoughtSignature?: string;
+  extraContent?: Record<string, any>;
 }
 
 export interface ChatMessage {
@@ -123,6 +125,8 @@ export interface ChatMessage {
   finishReason?: string;
   citations?: WebCitation[];
   toolCalls?: ToolCallItem[];
+  thoughtSignature?: string;
+  extraContent?: Record<string, any>;
   toolCallId?: string;
   createdAt: number;
   updatedAt: number;

@@ -420,6 +420,13 @@ export class OpenAiAdapter implements IProviderAdapter {
         id: tc.id,
         name: tc.function?.name || '',
         arguments: tc.function?.arguments || '',
+        thoughtSignature:
+          tc.thought_signature ||
+          tc.thoughtSignature ||
+          tc.extra_content?.google?.thought_signature ||
+          choice.message?.extra_content?.google?.thought_signature ||
+          json.extra_content?.google?.thought_signature,
+        extraContent: tc.extra_content || choice.message?.extra_content || json.extra_content,
       }));
 
       const finishReason = choice?.finish_reason || 'stop';

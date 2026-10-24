@@ -5,6 +5,8 @@ export interface RawToolCall {
   id: string;
   name: string;
   arguments: string;
+  thoughtSignature?: string;
+  extraContent?: Record<string, any>;
 }
 
 export interface ParseOptions {
@@ -88,16 +90,38 @@ export function createSseStreamParser(options: ParseOptions) {
           if (Array.isArray(deltaToolCalls)) {
             for (const tc of deltaToolCalls) {
               const idx = typeof tc.index === 'number' ? tc.index : accumulatedToolCalls.length;
+              const sig =
+                tc.thought_signature ||
+                tc.thoughtSignature ||
+                tc.extra_content?.google?.thought_signature ||
+                tc.extra_content?.vertex?.thought_signature ||
+                tc.extra_content?.thought_signature ||
+                choice.delta?.extra_content?.google?.thought_signature ||
+                choice.message?.extra_content?.google?.thought_signature ||
+                choice.extra_content?.google?.thought_signature ||
+                json.extra_content?.google?.thought_signature;
+
+              const extra =
+                tc.extra_content ||
+                choice.delta?.extra_content ||
+                choice.message?.extra_content ||
+                choice.extra_content ||
+                json.extra_content;
+
               if (!accumulatedToolCalls[idx]) {
                 accumulatedToolCalls[idx] = {
                   id: tc.id || `call_${Date.now()}_${idx}`,
                   name: tc.function?.name || '',
                   arguments: tc.function?.arguments || '',
+                  thoughtSignature: sig,
+                  extraContent: extra,
                 };
               } else {
                 if (tc.id) accumulatedToolCalls[idx].id = tc.id;
                 if (tc.function?.name) accumulatedToolCalls[idx].name += tc.function.name;
                 if (tc.function?.arguments) accumulatedToolCalls[idx].arguments += tc.function.arguments;
+                if (sig && !accumulatedToolCalls[idx].thoughtSignature) accumulatedToolCalls[idx].thoughtSignature = sig;
+                if (extra && !accumulatedToolCalls[idx].extraContent) accumulatedToolCalls[idx].extraContent = extra;
               }
             }
             if (options.onToolCallDelta) {

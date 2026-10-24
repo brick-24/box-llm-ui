@@ -407,6 +407,8 @@ export class ChatEngine {
                 name: tc.name,
                 input: parsedInput,
                 status: 'running',
+                thoughtSignature: tc.thoughtSignature,
+                extraContent: tc.extraContent,
               };
               currentTurnItems.push(item);
               executedToolCalls.push(item);
@@ -419,6 +421,9 @@ export class ChatEngine {
                 });
               }
 
+              // Normalize tool name (handles cases like default_api:list_dir or tools:run_command)
+              const normalizedName = item.name.replace(/^(default_api|tools):/, '');
+
               // Execute tool
               const toolStart = Date.now();
               try {
@@ -430,7 +435,7 @@ export class ChatEngine {
                     'list_dir',
                     'run_command',
                     'grep_search',
-                  ].includes(item.name)
+                  ].includes(normalizedName)
                 ) {
                   if (!effectiveWorkspacePath) {
                     throw new Error(
@@ -438,7 +443,7 @@ export class ChatEngine {
                     );
                   }
 
-                  switch (item.name) {
+                  switch (normalizedName) {
                     case 'write_to_file': {
                       const res = WorkspaceTools.writeToFile(
                         effectiveWorkspacePath,
@@ -529,7 +534,7 @@ export class ChatEngine {
                   }
                 } else {
                   // Web tools
-                  const output = await executeWebTool(item.name, item.input, settings);
+                  const output = await executeWebTool(normalizedName, item.input, settings);
                   item.output = output.result;
                   if (output.citations) {
                     accumulatedCitations.push(...output.citations);
@@ -555,12 +560,17 @@ export class ChatEngine {
             }
 
             // Append assistant tool_calls message and tool responses to trajectory
+            const turnSignature = currentTurnItems.find((it) => it.thoughtSignature)?.thoughtSignature;
+            const turnExtra = currentTurnItems.find((it) => it.extraContent)?.extraContent;
+
             trajectory.push({
               id: crypto.randomUUID(),
               conversationId,
               role: 'assistant',
               content: turnFullText,
               toolCalls: currentTurnItems,
+              thoughtSignature: turnSignature,
+              extraContent: turnExtra,
               status: 'completed',
               createdAt: Date.now(),
               updatedAt: Date.now(),

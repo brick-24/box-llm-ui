@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { WorkspaceTools } from '../src/main/engine/tools/workspace-tools';
+import { WorkspaceTools, sanitizeCommandForWindows } from '../src/main/engine/tools/workspace-tools';
 
 describe('WorkspaceTools - Agentic Coding Engine', () => {
   let tempDir: string;
@@ -111,6 +111,38 @@ describe('WorkspaceTools - Agentic Coding Engine', () => {
   it('blocks dangerous terminal commands per safety policy', async () => {
     await expect(tools.runCommand('rm -rf /')).rejects.toThrow(/Command blocked by safety policy/i);
     await expect(tools.runCommand('mkfs.ext4 /dev/sda')).rejects.toThrow(/Command blocked by safety policy/i);
+  });
+
+  it('sanitizes Windows commands replacing unquoted && and || with ; while preserving quoted strings', () => {
+    const r1 = sanitizeCommandForWindows('npm run build && npm test');
+    expect(r1.wasModified).toBe(true);
+    expect(r1.command).toBe('npm run build; npm test');
+
+    const r2 = sanitizeCommandForWindows('git status || git init');
+    expect(r2.wasModified).toBe(true);
+    expect(r2.command).toBe('git status; git init');
+
+    const r3 = sanitizeCommandForWindows('git commit -m "fix && test" && git push');
+    expect(r3.wasModified).toBe(true);
+    expect(r3.command).toBe('git commit -m "fix && test"; git push');
+
+    const r4 = sanitizeCommandForWindows('export NODE_ENV=production');
+    expect(r4.wasModified).toBe(true);
+    expect(r4.command).toBe('$env:NODE_ENV=production');
+
+    const r5 = sanitizeCommandForWindows('which node');
+    expect(r5.wasModified).toBe(true);
+    expect(r5.command).toBe('Get-Command node');
+
+    const r6 = sanitizeCommandForWindows('git status');
+    expect(r6.wasModified).toBe(false);
+    expect(r6.command).toBe('git status');
+  });
+
+  it('runs commands with && on Windows without crashing due to statement separator errors', async () => {
+    const res = await tools.runCommand('node -e "process.stdout.write(\'alpha\')" && node -e "process.stdout.write(\'beta\')"');
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout).toContain('alphabeta');
   });
 
   it('generates a hierarchical workspace tree', async () => {

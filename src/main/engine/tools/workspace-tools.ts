@@ -8,6 +8,7 @@ import {
   GitFileChange,
   GitFileStatus,
 } from '../../../shared/types';
+import { DiagnosticsService } from '../diagnostics';
 
 export interface CommandExecutionResult {
   command: string;
@@ -63,6 +64,95 @@ const DANGEROUS_COMMAND_PATTERNS = [
   /mkfs/i,
   /:()\{\s*:\|:&\s*\};:/, // fork bomb
 ];
+
+/**
+ * Safely sanitizes commands for Windows PowerShell:
+ * 1. Replaces unquoted '&&' and '||' statement operators with '; '
+ * 2. Converts 'export VAR=val' into '$env:VAR="val"'
+ * 3. Converts 'which <tool>' into 'Get-Command <tool>'
+ * 4. Preserves operators inside single and double quotes (e.g. in commit messages)
+ */
+export function sanitizeCommandForWindows(rawCommand: string): {
+  command: string;
+  wasModified: boolean;
+  reason?: string;
+} {
+  let cmd = rawCommand.trim();
+  let wasModified = false;
+  const reasons: string[] = [];
+
+  // Quote-aware replacement of unquoted && and ||
+  let inSingle = false;
+  let inDouble = false;
+  let transformed = '';
+
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    const next = cmd[i + 1];
+
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      transformed += ch;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      transformed += ch;
+      continue;
+    }
+
+    if (!inSingle && !inDouble) {
+      if (ch === '&' && next === '&') {
+        transformed += '; ';
+        i++;
+        wasModified = true;
+        continue;
+      }
+      if (ch === '|' && next === '|') {
+        transformed += '; ';
+        i++;
+        wasModified = true;
+        continue;
+      }
+    }
+
+    transformed += ch;
+  }
+
+  if (wasModified) {
+    reasons.push("replaced '&&' / '||' with ';'");
+    cmd = transformed.replace(/;\s*;/g, ';').replace(/\s*;\s*/g, '; ').trim();
+  }
+
+  // Convert 'export VAR=val' to '$env:VAR="val"'
+  if (/^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/im.test(cmd)) {
+    const converted = cmd.replace(
+      /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/gim,
+      (_m, key, val) => {
+        const cleanVal = val.trim();
+        return `$env:${key}=${cleanVal}`;
+      }
+    );
+    if (converted !== cmd) {
+      cmd = converted;
+      wasModified = true;
+      reasons.push("converted 'export' to '$env:'");
+    }
+  }
+
+  // Convert 'which <cmd>' to 'Get-Command <cmd>'
+  if (/^\s*which\s+([a-zA-Z0-9_\-.]+)\s*$/i.test(cmd)) {
+    cmd = cmd.replace(/^\s*which\s+([a-zA-Z0-9_\-.]+)\s*$/i, 'Get-Command $1');
+    wasModified = true;
+    reasons.push("converted 'which' to 'Get-Command'");
+  }
+
+  return {
+    command: cmd,
+    wasModified,
+    reason: reasons.length > 0 ? reasons.join(', ') : undefined,
+  };
+}
 
 export class WorkspaceTools {
   public readonly workspaceRoot: string;
@@ -422,8 +512,25 @@ export class WorkspaceTools {
       let isDone = false;
 
       const isWin = process.platform === 'win32';
+      let effectiveCommand = command;
+
+      if (isWin) {
+        const sanitized = sanitizeCommandForWindows(command);
+        if (sanitized.wasModified) {
+          effectiveCommand = sanitized.command;
+          DiagnosticsService.log(
+            'info',
+            'workspace',
+            `[runCommand] Auto-sanitized Windows PowerShell command (${sanitized.reason})`,
+            { original: command, sanitized: effectiveCommand }
+          );
+        }
+      }
+
       const shellCmd = isWin ? 'powershell.exe' : 'bash';
-      const shellArgs = isWin ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command] : ['-c', command];
+      const shellArgs = isWin
+        ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', effectiveCommand]
+        : ['-c', effectiveCommand];
 
       const child = spawn(shellCmd, shellArgs, {
         cwd: absRoot,

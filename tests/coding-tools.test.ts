@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CODING_TOOLS,
   buildCodingSystemPrompt,
+  buildGeneralSystemPrompt,
   getSystemEnvironmentInfo,
 } from '../src/main/engine/tools/coding-tool-definitions';
 
@@ -50,6 +51,23 @@ describe('Coding Tool Definitions & System Prompt Builder', () => {
       expect(env.shell).toBe('powershell.exe');
       expect(env.rules.some((r: string) => r.includes('&&'))).toBe(true);
     }
+  });
+
+  it('builds general system prompt injecting environment rules for non-workspace chats', () => {
+    const prompt = buildGeneralSystemPrompt('Be a concise helper.');
+    expect(prompt).toContain('Be a concise helper.');
+    expect(prompt).toContain('<user_environment>');
+    if (process.platform === 'win32') {
+      expect(prompt).toContain('<terminal_guidelines>');
+      expect(prompt).toContain('KEEP COMMANDS SIMPLE AND ATOMIC');
+    }
+  });
+
+  it('explicitly warns against && and || in run_command tool schema', () => {
+    const runTool = CODING_TOOLS.find((t) => t.function.name === 'run_command');
+    expect(runTool).toBeDefined();
+    expect(runTool!.function.description).toContain('Keep commands simple and atomic');
+    expect(runTool!.function.parameters.properties.command.description).toContain('NEVER use "&&", "||"');
   });
 });
 

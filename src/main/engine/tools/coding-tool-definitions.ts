@@ -107,13 +107,14 @@ export const CODING_TOOLS: ToolDefinition[] = [
     function: {
       name: 'run_command',
       description:
-        'Executes a terminal/shell command (e.g. npm, npx, node, git, python, cargo, pytest) directly in the workspace directory with live output streaming.',
+        'Executes a single simple terminal command directly in the workspace directory with live output streaming. MANDATORY: Keep commands simple and atomic (e.g. "npm test", "git status", "npm run build"). NEVER use "&&", "||", or compound command chaining. Execute each command as a separate step.',
       parameters: {
         type: 'object',
         properties: {
           command: {
             type: 'string',
-            description: 'The shell command line string to execute in the workspace root.',
+            description:
+              'A single, simple shell command string to execute in the workspace root (e.g. "npm install", "git status", "npx vitest run"). STRICT RULE: Only ONE simple command per call. NEVER use "&&", "||", or bash chaining syntax. Keep commands simple.',
           },
           timeoutMs: {
             type: 'number',
@@ -182,17 +183,20 @@ export function getSystemEnvironmentInfo(): SystemEnvironmentInfo {
 
   const rules: string[] = isWin
     ? [
-        "DO NOT use POSIX '&&' or '||' statement chaining (PowerShell 5.1 syntax error). Use ';' to separate sequential commands (e.g. 'npm run build; npm test') or invoke separate run_command calls.",
-        "DO NOT use bash-specific environment variable exports like 'export VAR=val'. In PowerShell, use '$env:VAR=\"val\"' or pass environment parameters directly.",
-        "DO NOT use Unix-specific commands like 'touch', 'ls -la', 'cat file', 'rm -rf'. Use node scripts, git commands, or native PowerShell equivalents.",
-        "Always quote file paths or arguments that might contain spaces with double quotes.",
-        "For git commands, execute standard git commands (e.g. 'git status', 'git add .', 'git commit -m \"...\"').",
+        "KEEP COMMANDS SIMPLE AND ATOMIC: Execute ONE simple command per `run_command` call (e.g. 'npm install', 'git status', 'npm run build'). DO NOT combine commands.",
+        "STRICTLY FORBIDDEN: NEVER use '&&' or '||'. Windows PowerShell (powershell.exe) does NOT support POSIX '&&' or '||' and will throw an immediate syntax error. Do NOT chain commands with '&&' or '||'.",
+        "NO COMPLEX COMPOUND CHAINS: If you need to run two tasks (e.g. build then test), execute the first command ('npm run build'), inspect the result, and then execute the second command ('npm test') in your next turn. Keep commands dead simple.",
+        "DO NOT use bash-specific commands or syntax: No 'export VAR=val' (use '$env:VAR=\"val\"'), no 'touch', no 'ls -la' (use 'dir' or the built-in list_dir tool), no 'cat' (use view_file tool), no 'rm -rf'.",
+        "PREFER BUILT-IN TOOLS: For viewing, editing, listing, or searching files, always prefer 'view_file', 'replace_file_content', 'write_to_file', and 'list_dir' rather than shell commands.",
+        "DO NOT run 'cd <directory>': Commands already run with working directory set to the workspace root.",
+        "Always quote file paths or arguments containing spaces with double quotes.",
+        "For git commands, execute standard simple git commands (e.g. 'git status', 'git add .', 'git commit -m \"...\"').",
       ]
     : [
+        "KEEP COMMANDS SIMPLE AND ATOMIC: Prefer running simple, focused commands.",
         "Use standard POSIX Bash/Zsh syntax.",
-        "Command chaining with '&&', '||', and ';' is fully supported.",
         "Environment variables can be exported with 'export VAR=val'.",
-        "Standard Unix utilities ('ls', 'mkdir -p', 'rm -rf', etc.) are supported.",
+        "PREFER BUILT-IN TOOLS: For viewing, editing, or searching files, use the built-in tools (view_file, replace_file_content, grep_search).",
       ];
 
   return {
@@ -206,13 +210,46 @@ export function getSystemEnvironmentInfo(): SystemEnvironmentInfo {
   };
 }
 
+export function buildGeneralSystemPrompt(userSystemPrompt?: string): string {
+  const env = getSystemEnvironmentInfo();
+  const envBlock = `<user_environment>
+Operating System: ${env.osName} (${env.platform}, ${env.arch})
+Default Terminal Shell: ${env.shell}
+</user_environment>
+${
+  env.platform === 'win32'
+    ? `<terminal_guidelines>
+The user is on Windows. When providing terminal commands or scripts:
+1. KEEP COMMANDS SIMPLE AND ATOMIC: One single command at a time.
+2. NEVER use POSIX '&&' or '||' (PowerShell 5.1 syntax error). Use separate lines or PowerShell ';' if strictly necessary.
+3. Use PowerShell syntax ($env:VAR="val" instead of export).
+4. Avoid Unix-only commands ('ls -la', 'touch', 'rm -rf', 'cat'). Use native PowerShell or cross-platform node/npm/git commands.
+</terminal_guidelines>`
+    : ''
+}`;
+
+  if (userSystemPrompt && userSystemPrompt.trim()) {
+    return `${userSystemPrompt.trim()}\n\n${envBlock}`;
+  }
+  return envBlock;
+}
+
 export function buildCodingSystemPrompt(workspacePath: string, userSystemPrompt?: string): string {
   const normalizedPath = workspacePath.replace(/\\/g, '/');
   const env = getSystemEnvironmentInfo();
 
   const rulesFormatted = env.rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
 
-  const baseInstruction = `You are an elite, autonomous software engineering agent operating directly inside the project workspace at:
+  const windowsDirectives = env.platform === 'win32'
+    ? `\n# CRITICAL WINDOWS POWERSHELL DIRECTIVE:
+You are running on Windows. The shell is powershell.exe.
+1. KEEP ALL TERMINAL COMMANDS SIMPLE AND ATOMIC: Only ONE simple command per run_command call.
+2. NEVER use "&&" or "||" under any circumstances. They cause immediate syntax errors in PowerShell.
+3. DO NOT chain commands. Run commands step-by-step individually.
+4. Do NOT use bash commands like "cat", "touch", "export". Use the built-in tools (view_file, write_to_file, replace_file_content).\n`
+    : '';
+
+  const baseInstruction = `${windowsDirectives}You are an elite, autonomous software engineering agent operating directly inside the project workspace at:
 \`${normalizedPath}\`
 
 <system_environment>
@@ -240,11 +277,14 @@ Engineering Guidelines:
 2. For project creation: Scaffold complete, production-ready code with proper configs (e.g. package.json, tsconfig.json, vite.config.ts), run setup commands (e.g. \`npm install\`), and verify that builds succeed.
 3. Surgical edits: Prefer \`replace_file_content\` for targeted modifications.
 4. Verify changes: Run tests or build commands using \`run_command\` whenever appropriate to verify your work before concluding.
-5. Respect terminal syntax: Always adhere to the <terminal_execution_rules> above to avoid syntax failures.
-6. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.`;
+5. KEEP COMMANDS SIMPLE: Execute simple atomic commands. Never chain with "&&" or "||".
+6. Respect terminal syntax: Always adhere to the <terminal_execution_rules> above to avoid syntax failures.
+7. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.
+
+REMINDER: On Windows PowerShell, NEVER use "&&" or "||". Keep commands simple and atomic.`;
 
   if (userSystemPrompt && userSystemPrompt.trim()) {
-    return `${userSystemPrompt.trim()}\n\n---\n${baseInstruction}`;
+    return `${baseInstruction}\n\n---\nAdditional User Instructions:\n${userSystemPrompt.trim()}`;
   }
   return baseInstruction;
 }

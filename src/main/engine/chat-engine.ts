@@ -15,7 +15,7 @@ import {
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
 import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
 import { WorkspaceTools } from './tools/workspace-tools';
-import { CODING_TOOLS, buildCodingSystemPrompt } from './tools/coding-tool-definitions';
+import { CODING_TOOLS, buildCodingSystemPrompt, buildGeneralSystemPrompt } from './tools/coding-tool-definitions';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
   if (!text) return false;
@@ -266,7 +266,7 @@ export class ChatEngine {
     const baseSystemPrompt = options.systemPrompt || conv.systemPrompt;
     const effectiveSystemPrompt = hasWorkspace
       ? buildCodingSystemPrompt(effectiveWorkspacePath!, baseSystemPrompt)
-      : baseSystemPrompt;
+      : buildGeneralSystemPrompt(baseSystemPrompt);
 
     const executedToolCalls: ToolCallItem[] = [];
     const accumulatedCitations: WebCitation[] = [];

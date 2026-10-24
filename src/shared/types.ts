@@ -114,6 +114,7 @@ export interface ChatMessage {
   conversationId: string;
   parentId?: string | null;
   role: MessageRole;
+  name?: string;
   content: string;
   reasoningContent?: string;
   thinkingDurationMs?: number;

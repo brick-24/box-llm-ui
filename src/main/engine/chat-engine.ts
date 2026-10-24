@@ -581,6 +581,7 @@ export class ChatEngine {
                 id: crypto.randomUUID(),
                 conversationId,
                 role: 'tool',
+                name: item.name,
                 toolCallId: item.id,
                 content: typeof item.output === 'string' ? item.output : JSON.stringify(item.output),
                 status: 'completed',

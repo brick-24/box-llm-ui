@@ -28,7 +28,22 @@ export function createSseStreamParser(options: ParseOptions) {
   let fullReasoning = '';
   let tokenUsage: TokenUsage | undefined;
   let finishReason: string | undefined;
+  let streamThoughtSignature: string | undefined;
+  let streamExtraContent: Record<string, any> | undefined;
   const accumulatedToolCalls: RawToolCall[] = [];
+
+  const finalizeSignatures = () => {
+    if (streamThoughtSignature) {
+      for (const tc of accumulatedToolCalls) {
+        if (!tc.thoughtSignature) {
+          tc.thoughtSignature = streamThoughtSignature;
+        }
+        if (!tc.extraContent && streamExtraContent) {
+          tc.extraContent = streamExtraContent;
+        }
+      }
+    }
+  };
 
   const parser = createParser({
     onEvent: (event: any) => {
@@ -36,6 +51,7 @@ export function createSseStreamParser(options: ParseOptions) {
       if (!data) return;
 
       if (data === '[DONE]') {
+        finalizeSignatures();
         options.onDone(
           fullText,
           tokenUsage,
@@ -86,6 +102,42 @@ export function createSseStreamParser(options: ParseOptions) {
             finishReason = choice.finish_reason;
           }
 
+          const chunkSig =
+            choice.delta?.thought_signature ||
+            choice.delta?.thoughtSignature ||
+            choice.delta?.function?.thought_signature ||
+            choice.delta?.function?.thoughtSignature ||
+            choice.delta?.extra_content?.google?.thought_signature ||
+            choice.delta?.extra_content?.google?.thoughtSignature ||
+            choice.delta?.extra_content?.vertex?.thought_signature ||
+            choice.delta?.extra_content?.thought_signature ||
+            choice.message?.thought_signature ||
+            choice.message?.thoughtSignature ||
+            choice.message?.function?.thought_signature ||
+            choice.message?.function?.thoughtSignature ||
+            choice.message?.extra_content?.google?.thought_signature ||
+            choice.message?.extra_content?.google?.thoughtSignature ||
+            choice.extra_content?.google?.thought_signature ||
+            choice.extra_content?.google?.thoughtSignature ||
+            json.extra_content?.google?.thought_signature ||
+            json.extra_content?.google?.thoughtSignature ||
+            json.thought_signature ||
+            json.thoughtSignature;
+
+          if (chunkSig) {
+            streamThoughtSignature = chunkSig;
+          }
+
+          const chunkExtra =
+            choice.delta?.extra_content ||
+            choice.message?.extra_content ||
+            choice.extra_content ||
+            json.extra_content;
+
+          if (chunkExtra) {
+            streamExtraContent = chunkExtra;
+          }
+
           const deltaToolCalls = choice.delta?.tool_calls ?? choice.message?.tool_calls;
           if (Array.isArray(deltaToolCalls)) {
             for (const tc of deltaToolCalls) {
@@ -93,20 +145,19 @@ export function createSseStreamParser(options: ParseOptions) {
               const sig =
                 tc.thought_signature ||
                 tc.thoughtSignature ||
+                tc.function?.thought_signature ||
+                tc.function?.thoughtSignature ||
                 tc.extra_content?.google?.thought_signature ||
+                tc.extra_content?.google?.thoughtSignature ||
                 tc.extra_content?.vertex?.thought_signature ||
                 tc.extra_content?.thought_signature ||
-                choice.delta?.extra_content?.google?.thought_signature ||
-                choice.message?.extra_content?.google?.thought_signature ||
-                choice.extra_content?.google?.thought_signature ||
-                json.extra_content?.google?.thought_signature;
+                chunkSig ||
+                streamThoughtSignature;
 
               const extra =
                 tc.extra_content ||
-                choice.delta?.extra_content ||
-                choice.message?.extra_content ||
-                choice.extra_content ||
-                json.extra_content;
+                chunkExtra ||
+                streamExtraContent;
 
               if (!accumulatedToolCalls[idx]) {
                 accumulatedToolCalls[idx] = {
@@ -125,6 +176,7 @@ export function createSseStreamParser(options: ParseOptions) {
               }
             }
             if (options.onToolCallDelta) {
+              finalizeSignatures();
               options.onToolCallDelta(accumulatedToolCalls);
             }
           }
@@ -180,6 +232,9 @@ export function createSseStreamParser(options: ParseOptions) {
     getFullReasoning: () => fullReasoning,
     getTokenUsage: () => tokenUsage,
     getFinishReason: () => finishReason,
-    getToolCalls: () => accumulatedToolCalls,
+    getToolCalls: () => {
+      finalizeSignatures();
+      return accumulatedToolCalls;
+    },
   };
 }

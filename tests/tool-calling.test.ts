@@ -88,24 +88,24 @@ describe('Tool Calling Engine & SSE Parsing', () => {
       {
         id: 'msg_1',
         conversationId: 'conv_1',
-        role: 'user',
+        role: 'user' as const,
         content: 'list files in workspace',
-        status: 'completed',
+        status: 'completed' as const,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },
       {
         id: 'msg_2',
         conversationId: 'conv_1',
-        role: 'assistant',
+        role: 'assistant' as const,
         content: '',
-        status: 'completed',
+        status: 'completed' as const,
         toolCalls: [
           {
             id: 'call_1',
             name: 'default_api:list_dir',
             input: { dirPath: '.' },
-            status: 'completed',
+            status: 'completed' as const,
             thoughtSignature: 'test_signature_xyz',
           },
         ],
@@ -115,10 +115,10 @@ describe('Tool Calling Engine & SSE Parsing', () => {
       {
         id: 'msg_3',
         conversationId: 'conv_1',
-        role: 'tool',
+        role: 'tool' as const,
         toolCallId: 'call_1',
         content: '{"files":["package.json"]}',
-        status: 'completed',
+        status: 'completed' as const,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       },
@@ -130,9 +130,21 @@ describe('Tool Calling Engine & SSE Parsing', () => {
     const assistantPayload = formatted[2];
     expect(assistantPayload.role).toBe('assistant');
     expect(assistantPayload.thought_signature).toBe('test_signature_xyz');
+    expect(assistantPayload.thoughtSignature).toBe('test_signature_xyz');
     expect(assistantPayload.extra_content?.google?.thought_signature).toBe('test_signature_xyz');
+    expect(assistantPayload.extra_content?.google?.thoughtSignature).toBe('test_signature_xyz');
+    expect(assistantPayload.extra_content?.vertex?.thought_signature).toBe('test_signature_xyz');
     expect(assistantPayload.tool_calls[0].thought_signature).toBe('test_signature_xyz');
+    expect(assistantPayload.tool_calls[0].thoughtSignature).toBe('test_signature_xyz');
+    expect(assistantPayload.tool_calls[0].function.thought_signature).toBe('test_signature_xyz');
+    expect(assistantPayload.tool_calls[0].function.thoughtSignature).toBe('test_signature_xyz');
     expect(assistantPayload.tool_calls[0].extra_content?.google?.thought_signature).toBe('test_signature_xyz');
+
+    // Tool payload should also have resolved name
+    const toolPayload = formatted[3];
+    expect(toolPayload.role).toBe('tool');
+    expect(toolPayload.name).toBe('default_api:list_dir');
+    expect(toolPayload.tool_call_id).toBe('call_1');
   });
 
   it('injects fallback skip_thought_signature_validator when thoughtSignature is missing', () => {
@@ -140,15 +152,15 @@ describe('Tool Calling Engine & SSE Parsing', () => {
       {
         id: 'msg_1',
         conversationId: 'conv_1',
-        role: 'assistant',
+        role: 'assistant' as const,
         content: '',
-        status: 'completed',
+        status: 'completed' as const,
         toolCalls: [
           {
             id: 'call_2',
             name: 'write_to_file',
             input: { filePath: 'test.ts', content: 'hello' },
-            status: 'completed',
+            status: 'completed' as const,
             // No thoughtSignature provided
           },
         ],
@@ -160,9 +172,38 @@ describe('Tool Calling Engine & SSE Parsing', () => {
     const formatted = formatMessagesWithAttachments(mockMessages);
     const assistantPayload = formatted[0];
     expect(assistantPayload.thought_signature).toBe('skip_thought_signature_validator');
+    expect(assistantPayload.thoughtSignature).toBe('skip_thought_signature_validator');
     expect(assistantPayload.extra_content?.google?.thought_signature).toBe('skip_thought_signature_validator');
     expect(assistantPayload.tool_calls[0].thought_signature).toBe('skip_thought_signature_validator');
+    expect(assistantPayload.tool_calls[0].function.thought_signature).toBe('skip_thought_signature_validator');
     expect(assistantPayload.tool_calls[0].extra_content?.google?.thought_signature).toBe('skip_thought_signature_validator');
+  });
+
+  it('preserves thought signature even when delivered in reasoning chunk before tool delta', () => {
+    let completedToolCalls: RawToolCall[] | undefined;
+
+    const parser = createSseStreamParser({
+      onDelta: () => {},
+      onDone: (_text, _usage, _finish, _reasoning, toolCalls) => {
+        completedToolCalls = toolCalls;
+      },
+      onError: () => {},
+    });
+
+    // Chunk 1: Thinking delta with thought_signature
+    const chunk1 = 'data: {"choices":[{"index":0,"delta":{"reasoning_content":"Thinking..."},"extra_content":{"google":{"thought_signature":"sig_split_chunk"}}}]}\n\n';
+    // Chunk 2: Function call delta without signature in delta itself
+    const chunk2 = 'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_456","type":"function","function":{"name":"list_dir","arguments":"{}"}}]}}]}\n\n';
+    // Chunk 3: Done
+    const chunk3 = 'data: [DONE]\n\n';
+
+    parser.feed(chunk1);
+    parser.feed(chunk2);
+    parser.feed(chunk3);
+
+    expect(completedToolCalls).toBeDefined();
+    expect(completedToolCalls![0].id).toBe('call_456');
+    expect(completedToolCalls![0].thoughtSignature).toBe('sig_split_chunk');
   });
 });
 

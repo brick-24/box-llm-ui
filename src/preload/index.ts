@@ -12,6 +12,9 @@ import {
   WorkspaceFilePreview,
   GitStatusResult,
   GitCommitItem,
+  WorkspaceProcessItem,
+  ProcessOutputEvent,
+  ProcessExitEvent,
 } from '../shared/types';
 import { SendMessageOptions } from '../main/engine/chat-engine';
 import { IPC_CHANNELS } from '../main/ipc/channels';
@@ -66,6 +69,15 @@ export interface ElectronAPI {
   gitGetLog: (workspacePath: string, limit?: number) => Promise<GitCommitItem[]>;
   gitGetDiff: (workspacePath: string, filePath?: string) => Promise<string>;
   gitInitRepo: (workspacePath: string) => Promise<{ isRepo: boolean; initialized: boolean; message: string }>;
+
+  // Multi-Process & Background Engine
+  processStart: (params: { workspacePath: string; command: string; name?: string; cwd?: string; waitMsBeforeAsync?: number }) => Promise<WorkspaceProcessItem>;
+  processList: (workspacePath?: string) => Promise<WorkspaceProcessItem[]>;
+  processKill: (processId: string) => Promise<{ success: boolean; error?: string }>;
+  processSendInput: (processId: string, input: string) => Promise<{ success: boolean; error?: string }>;
+  processGetLogs: (processId: string, lines?: number) => Promise<{ logs: string[] }>;
+  onProcessOutput: (callback: (data: ProcessOutputEvent) => void) => () => void;
+  onProcessExit: (callback: (data: ProcessExitEvent) => void) => () => void;
 
   // Settings & Diagnostics
   getSettings: () => Promise<AppSettings>;
@@ -127,6 +139,12 @@ const api: ElectronAPI = {
   gitGetDiff: (wp, fp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_DIFF, wp, fp),
   gitInitRepo: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_INIT, wp),
 
+  processStart: (params) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PROCESS_START, params),
+  processList: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PROCESS_LIST, wp),
+  processKill: (pid) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PROCESS_KILL, pid),
+  processSendInput: (pid, input) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PROCESS_INPUT, pid, input),
+  processGetLogs: (pid, lines) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_PROCESS_LOGS, pid, lines),
+
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
   saveSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
   getDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
@@ -162,6 +180,16 @@ const api: ElectronAPI = {
     const handler = (_event: any, data: ToolCommandOutputEvent) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.TOOL_COMMAND_OUTPUT, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.TOOL_COMMAND_OUTPUT, handler);
+  },
+  onProcessOutput: (callback) => {
+    const handler = (_event: any, data: ProcessOutputEvent) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.WORKSPACE_PROCESS_OUTPUT_EVENT, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.WORKSPACE_PROCESS_OUTPUT_EVENT, handler);
+  },
+  onProcessExit: (callback) => {
+    const handler = (_event: any, data: ProcessExitEvent) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.WORKSPACE_PROCESS_EXIT_EVENT, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.WORKSPACE_PROCESS_EXIT_EVENT, handler);
   },
 };
 

@@ -189,6 +189,34 @@ export interface GitStatusResult {
   error?: string;
 }
 
+export type ProcessStatus = 'running' | 'completed' | 'failed' | 'killed';
+
+export interface WorkspaceProcessItem {
+  id: string;
+  workspaceRoot: string;
+  name: string;
+  command: string;
+  pid?: number;
+  status: ProcessStatus;
+  exitCode: number | null;
+  startedAt: number;
+  stoppedAt?: number;
+  logs: string[];
+  isDaemon: boolean;
+}
+
+export interface ProcessOutputEvent {
+  processId: string;
+  chunk: string;
+  totalLogs: number;
+}
+
+export interface ProcessExitEvent {
+  processId: string;
+  exitCode: number | null;
+  status: ProcessStatus;
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light' | 'system';
   fontSize: 'sm' | 'md' | 'lg';

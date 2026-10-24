@@ -11,6 +11,9 @@ import {
   WorkspaceFilePreview,
   GitStatusResult,
   GitCommitItem,
+  WorkspaceProcessItem,
+  ProcessOutputEvent,
+  ProcessExitEvent,
 } from '@shared/types';
 import { useProviderStore } from './useProviderStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -48,6 +51,11 @@ interface ChatState {
   isLoadingGit: boolean;
   activeGitDiff: { path?: string; diff: string } | null;
 
+  // Process & Multi-Terminal State
+  processes: WorkspaceProcessItem[];
+  activeProcessId: string | null;
+  isLoadingProcesses: boolean;
+
   init: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
   createConversation: (providerId?: string, modelId?: string, workspacePath?: string) => Promise<Conversation | null>;
@@ -59,12 +67,17 @@ interface ChatState {
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
   closeBrowserDrawer: () => void;
 
-  // Workspace & Git Actions
+  // Workspace, Process & Git Actions
   setWorkspacePath: (path: string | null) => Promise<void>;
   selectWorkspaceDialog: () => Promise<void>;
   toggleWorkspaceDrawer: () => void;
   loadWorkspaceTree: () => Promise<void>;
   loadGitData: () => Promise<void>;
+  loadProcesses: () => Promise<void>;
+  startProcess: (command: string, name?: string) => Promise<WorkspaceProcessItem | null>;
+  killProcess: (processId: string) => Promise<boolean>;
+  sendProcessInput: (processId: string, input: string) => Promise<boolean>;
+  selectProcess: (processId: string | null) => void;
   openFilePreview: (relativePath: string) => Promise<void>;
   closeFilePreview: () => void;
   openGitDiff: (filePath?: string) => Promise<void>;
@@ -113,6 +126,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   gitCommits: [],
   isLoadingGit: false,
   activeGitDiff: null,
+  processes: [],
+  activeProcessId: null,
+  isLoadingProcesses: false,
 
   init: async () => {
     if (!window.electronAPI) return;
@@ -407,6 +423,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     });
+
+    window.electronAPI.onProcessOutput?.((data: ProcessOutputEvent) => {
+      const { processId, chunk } = data;
+      set((state) => {
+        const existing = state.processes.find((p) => p.id === processId);
+        if (!existing) return {};
+        const updated = state.processes.map((p) => {
+          if (p.id !== processId) return p;
+          const newLogs = [...p.logs, chunk];
+          if (newLogs.length > 2000) newLogs.splice(0, newLogs.length - 2000);
+          return {
+            ...p,
+            logs: newLogs,
+          };
+        });
+        return { processes: updated };
+      });
+    });
+
+    window.electronAPI.onProcessExit?.((data: ProcessExitEvent) => {
+      const { processId, exitCode } = data;
+      set((state) => ({
+        processes: state.processes.map((p) =>
+          p.id === processId
+            ? {
+                ...p,
+                status: 'stopped',
+                exitCode: exitCode ?? undefined,
+                completedAt: Date.now(),
+              }
+            : p
+        ),
+      }));
+    });
   },
 
   selectConversation: async (id: string) => {
@@ -435,8 +485,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (wp) {
       get().loadWorkspaceTree();
       get().loadGitData();
+      get().loadProcesses();
     } else {
-      set({ workspaceTree: null, gitStatus: null, gitCommits: [] });
+      set({ workspaceTree: null, gitStatus: null, gitCommits: [], processes: [], activeProcessId: null });
     }
 
     if (conv?.providerId) {
@@ -516,8 +567,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (path) {
       await get().loadWorkspaceTree();
       await get().loadGitData();
+      await get().loadProcesses();
     } else {
-      set({ workspaceTree: null, selectedPreviewFile: null, gitStatus: null, gitCommits: [] });
+      set({ workspaceTree: null, selectedPreviewFile: null, gitStatus: null, gitCommits: [], processes: [], activeProcessId: null });
     }
   },
 
@@ -616,6 +668,82 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { workspacePath } = get();
     if (!workspacePath || !window.electronAPI) return;
     await window.electronAPI.openWorkspaceInExplorer(workspacePath);
+  },
+
+  loadProcesses: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) {
+      set({ processes: [], isLoadingProcesses: false });
+      return;
+    }
+    set({ isLoadingProcesses: true });
+    try {
+      const procs = await window.electronAPI.processList(workspacePath);
+      set((state) => {
+        const activeStillExists = procs.some((p) => p.id === state.activeProcessId);
+        return {
+          processes: procs,
+          activeProcessId: activeStillExists ? state.activeProcessId : procs[0]?.id || null,
+          isLoadingProcesses: false,
+        };
+      });
+    } catch (err) {
+      console.error('Failed to load workspace processes:', err);
+      set({ isLoadingProcesses: false });
+    }
+  },
+
+  startProcess: async (command: string, name?: string) => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI || !command.trim()) return null;
+    try {
+      const item = await window.electronAPI.processStart({
+        workspacePath,
+        command: command.trim(),
+        name: name || command.trim().split(' ')[0],
+      });
+      set((state) => ({
+        processes: [item, ...state.processes.filter((p) => p.id !== item.id)],
+        activeProcessId: item.id,
+      }));
+      return item;
+    } catch (err) {
+      console.error('Failed to start process:', err);
+      return null;
+    }
+  },
+
+  killProcess: async (processId: string) => {
+    if (!window.electronAPI) return false;
+    try {
+      const res = await window.electronAPI.processKill(processId);
+      if (res.success) {
+        set((state) => ({
+          processes: state.processes.map((p) =>
+            p.id === processId ? { ...p, status: 'stopped', completedAt: Date.now() } : p
+          ),
+        }));
+      }
+      return res.success;
+    } catch (err) {
+      console.error('Failed to kill process:', err);
+      return false;
+    }
+  },
+
+  sendProcessInput: async (processId: string, input: string) => {
+    if (!window.electronAPI) return false;
+    try {
+      const res = await window.electronAPI.processSendInput(processId, input);
+      return res.success;
+    } catch (err) {
+      console.error('Failed to send input to process:', err);
+      return false;
+    }
+  },
+
+  selectProcess: (processId: string | null) => {
+    set({ activeProcessId: processId });
   },
 
   updateConversation: async (updates) => {

@@ -118,10 +118,52 @@ export const CODING_TOOLS: ToolDefinition[] = [
           },
           timeoutMs: {
             type: 'number',
-            description: 'Command execution timeout in milliseconds (default: 60000ms).',
+            description: 'Command execution timeout in milliseconds (default: 60000ms). Only applicable for foreground commands.',
+          },
+          isDaemon: {
+            type: 'boolean',
+            description:
+              'Set to true for long-running processes that should run concurrently in the background (e.g. "npm run dev", "npm start", dev servers, file watchers). Box starts the process in the background, monitors initial bootstrap for 2 seconds, and returns its processId so you can run other commands or tests in parallel.',
+          },
+          waitMsBeforeAsync: {
+            type: 'number',
+            description:
+              'Milliseconds to wait after starting a background process to confirm successful startup before returning control (default: 2000ms).',
           },
         },
         required: ['command'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'manage_process',
+      description:
+        'Manage background and concurrent workspace processes. Allows listing active processes, checking real-time logs, sending stdin input, or terminating running processes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['list', 'status', 'logs', 'send_input', 'kill'],
+            description:
+              'Management action to perform: "list" (show all workspace processes), "status" (check running status and PID), "logs" (view recent terminal output), "send_input" (write text to process stdin), or "kill" (terminate the process tree).',
+          },
+          processId: {
+            type: 'string',
+            description: 'The process ID to manage (required for status, logs, send_input, and kill).',
+          },
+          input: {
+            type: 'string',
+            description: 'The text input to write to process stdin (required when action is "send_input").',
+          },
+          lines: {
+            type: 'number',
+            description: 'Number of recent log lines to retrieve (default: 50, max: 200). Used when action is "logs".',
+          },
+        },
+        required: ['action'],
       },
     },
   },
@@ -269,7 +311,8 @@ You have full access to workspace coding tools:
 - \`view_file\`: Inspect files with line numbers before making edits.
 - \`replace_file_content\`: Surgically edit specific code blocks without rewriting whole files.
 - \`list_dir\`: Discover directory hierarchy and project layout.
-- \`run_command\`: Execute shell commands (npm, npx, git, python, build tools, test runners).
+- \`run_command\`: Execute shell commands (npm, npx, git, python, build tools, test runners). Supports \`isDaemon: true\` to run dev servers/watchers concurrently in the background!
+- \`manage_process\`: Inspect, send input, or kill active background processes.
 - \`grep_search\`: Search code patterns across the codebase.
 
 Engineering Guidelines:
@@ -277,9 +320,10 @@ Engineering Guidelines:
 2. For project creation: Scaffold complete, production-ready code with proper configs (e.g. package.json, tsconfig.json, vite.config.ts), run setup commands (e.g. \`npm install\`), and verify that builds succeed.
 3. Surgical edits: Prefer \`replace_file_content\` for targeted modifications.
 4. Verify changes: Run tests or build commands using \`run_command\` whenever appropriate to verify your work before concluding.
-5. KEEP COMMANDS SIMPLE: Execute simple atomic commands. Never chain with "&&" or "||".
-6. Respect terminal syntax: Always adhere to the <terminal_execution_rules> above to avoid syntax failures.
-7. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.
+5. Concurrent / Background Processes: When launching a web app, dev server, or watcher (e.g. \`npm run dev\`, \`python app.py\`), use \`run_command\` with \`isDaemon: true\`. Box runs it concurrently in the background and returns its processId, allowing you to run tests or other terminal commands in parallel.
+6. KEEP COMMANDS SIMPLE: Execute simple atomic commands. Never chain with "&&" or "||".
+7. Respect terminal syntax: Always adhere to the <terminal_execution_rules> above to avoid syntax failures.
+8. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.
 
 REMINDER: On Windows PowerShell, NEVER use "&&" or "||". Keep commands simple and atomic.`;
 

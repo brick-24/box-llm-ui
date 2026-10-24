@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   X,
   RotateCw,
@@ -24,8 +24,16 @@ import {
   User,
   FileDiff,
   Sparkles,
+  Terminal,
+  Play,
+  Square,
+  Trash2,
+  Copy,
+  Check,
+  CornerDownLeft,
+  Zap,
 } from 'lucide-react';
-import { WorkspaceTreeNode, GitFileChange } from '@shared/types';
+import { WorkspaceTreeNode, GitFileChange, WorkspaceProcessItem } from '@shared/types';
 import { useChatStore } from '../../store/useChatStore';
 
 interface TreeNodeProps {
@@ -172,6 +180,16 @@ const getStatusBadge = (status: GitFileChange['status']) => {
   }
 };
 
+const stripAnsi = (str: string) => str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+
+const formatDuration = (startedAt: number, completedAt?: number) => {
+  const diffSec = Math.max(0, Math.floor(((completedAt || Date.now()) - startedAt) / 1000));
+  if (diffSec < 60) return `${diffSec}s`;
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  return `${mins}m ${secs}s`;
+};
+
 export const WorkspaceDrawer: React.FC = () => {
   const {
     workspacePath,
@@ -191,10 +209,61 @@ export const WorkspaceDrawer: React.FC = () => {
     closeGitDiff,
     activeGitDiff,
     initGitRepo,
+    processes,
+    activeProcessId,
+    isLoadingProcesses,
+    loadProcesses,
+    startProcess,
+    killProcess,
+    sendProcessInput,
+    selectProcess,
   } = useChatStore();
 
-  const [activeTab, setActiveTab] = useState<'files' | 'git'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'git' | 'processes'>('files');
   const [filter, setFilter] = useState('');
+  const [customCommand, setCustomCommand] = useState('');
+  const [stdinText, setStdinText] = useState('');
+  const [isStartingProcess, setIsStartingProcess] = useState(false);
+  const [copiedProcessId, setCopiedProcessId] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const terminalBottomRef = useRef<HTMLDivElement>(null);
+
+  const runningProcesses = processes.filter((p) => p.status === 'running');
+  const runningProcessCount = runningProcesses.length;
+  const activeProcess = processes.find((p) => p.id === activeProcessId) || processes[0] || null;
+
+  // Auto-scroll terminal when new logs arrive
+  useEffect(() => {
+    if (autoScroll && activeTab === 'processes' && terminalBottomRef.current) {
+      terminalBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeProcess?.logs.length, autoScroll, activeTab]);
+
+  const handleStartCustomProcess = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!customCommand.trim() || isStartingProcess) return;
+    setIsStartingProcess(true);
+    try {
+      await startProcess(customCommand.trim());
+      setCustomCommand('');
+    } finally {
+      setIsStartingProcess(false);
+    }
+  };
+
+  const handleSendStdin = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!activeProcess || !stdinText.trim() || activeProcess.status !== 'running') return;
+    sendProcessInput(activeProcess.id, stdinText.trim());
+    setStdinText('');
+  };
+
+  const handleCopyLogs = (process: WorkspaceProcessItem) => {
+    const raw = process.logs.map(stripAnsi).join('\n');
+    navigator.clipboard.writeText(raw);
+    setCopiedProcessId(process.id);
+    setTimeout(() => setCopiedProcessId(null), 2000);
+  };
 
   if (!isWorkspaceDrawerOpen) return null;
 
@@ -229,12 +298,13 @@ export const WorkspaceDrawer: React.FC = () => {
               onClick={() => {
                 loadWorkspaceTree();
                 loadGitData();
+                loadProcesses();
               }}
-              disabled={isLoadingTree || isLoadingGit || !workspacePath}
+              disabled={isLoadingTree || isLoadingGit || isLoadingProcesses || !workspacePath}
               className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-              title="Refresh Workspace & Git"
+              title="Refresh Workspace, Git & Processes"
             >
-              <RotateCw className={`w-3.5 h-3.5 ${isLoadingTree || isLoadingGit ? 'animate-spin' : ''}`} />
+              <RotateCw className={`w-3.5 h-3.5 ${isLoadingTree || isLoadingGit || isLoadingProcesses ? 'animate-spin' : ''}`} />
             </button>
             <button
               type="button"
@@ -270,7 +340,7 @@ export const WorkspaceDrawer: React.FC = () => {
 
         {/* Segmented Control (Apple HIG Desktop Design) */}
         {workspacePath && (
-          <div className="grid grid-cols-2 p-0.5 bg-zinc-950 border border-zinc-800/80 rounded-lg text-xs font-medium">
+          <div className="grid grid-cols-3 p-0.5 bg-zinc-950 border border-zinc-800/80 rounded-lg text-xs font-medium">
             <button
               type="button"
               onClick={() => setActiveTab('files')}
@@ -297,6 +367,24 @@ export const WorkspaceDrawer: React.FC = () => {
               {changeCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   {changeCount}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('processes')}
+              className={`flex items-center justify-center gap-1.5 py-1 rounded-md transition-all ${
+                activeTab === 'processes'
+                  ? 'bg-zinc-800 text-white shadow-sm font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Processes</span>
+              {runningProcessCount > 0 && (
+                <span className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {runningProcessCount}
                 </span>
               )}
             </button>
@@ -364,7 +452,7 @@ export const WorkspaceDrawer: React.FC = () => {
               <p className="text-xs">No files found in workspace</p>
             </div>
           )
-        ) : (
+        ) : activeTab === 'git' ? (
           /* Git Tab Content */
           <div className="space-y-4 p-1">
             {/* Git Branch & Status Header */}
@@ -496,6 +584,231 @@ export const WorkspaceDrawer: React.FC = () => {
               )}
             </div>
           </div>
+        ) : (
+          /* Processes Tab Content */
+          <div className="flex flex-col h-full gap-3 p-1">
+            {/* Quick Run Command Bar */}
+            <form onSubmit={handleStartCustomProcess} className="flex items-center gap-1.5 p-1 bg-zinc-950/80 rounded-lg border border-zinc-800">
+              <div className="relative flex-1">
+                <Terminal className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Run in background: npm run dev, vitest..."
+                  value={customCommand}
+                  onChange={(e) => setCustomCommand(e.target.value)}
+                  className="w-full bg-transparent pl-8 pr-2 py-1 text-xs text-zinc-200 placeholder-zinc-500 outline-none font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!customCommand.trim() || isStartingProcess}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[11px] font-medium transition-colors shadow-sm flex-shrink-0"
+              >
+                {isStartingProcess ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Play className="w-3 h-3 fill-current" />
+                )}
+                <span>Run</span>
+              </button>
+            </form>
+
+            {/* Process List / Selector */}
+            {processes.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-zinc-500 bg-zinc-950/40 border border-zinc-800/60 rounded-xl">
+                <div className="p-3 rounded-2xl bg-zinc-900 border border-zinc-800 mb-3 shadow-inner text-emerald-400">
+                  <Terminal className="w-7 h-7" />
+                </div>
+                <h4 className="text-xs font-semibold text-zinc-200 mb-1">No Processes Running</h4>
+                <p className="text-[11px] text-zinc-400 max-w-xs mb-4 leading-relaxed">
+                  Start dev servers, test watchers, or background tasks. The agent and you can run concurrent scripts while your server stays alive.
+                </p>
+                <div className="flex flex-wrap gap-1.5 justify-center">
+                  {['npm run dev', 'npm test', 'npx vitest'].map((cmd) => (
+                    <button
+                      key={cmd}
+                      type="button"
+                      onClick={() => {
+                        setCustomCommand(cmd);
+                        startProcess(cmd);
+                      }}
+                      className="px-2.5 py-1 rounded-md bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 hover:text-white text-[11px] font-mono border border-zinc-700/60 transition-colors"
+                    >
+                      + {cmd}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col flex-1 min-h-0 gap-2.5">
+                {/* Horizontal chips of processes */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none flex-shrink-0">
+                  {processes.map((p) => {
+                    const isSelected = activeProcess?.id === p.id;
+                    const isRunning = p.status === 'running';
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => selectProcess(p.id)}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition-all flex-shrink-0 select-none ${
+                          isSelected
+                            ? 'bg-zinc-800 border-zinc-600 text-white shadow-sm ring-1 ring-emerald-500/30'
+                            : 'bg-zinc-950/60 border-zinc-800/80 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                        }`}
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            isRunning
+                              ? 'bg-emerald-400 animate-pulse'
+                              : p.status === 'error'
+                              ? 'bg-rose-400'
+                              : 'bg-zinc-500'
+                          }`}
+                        />
+                        <span className="font-mono text-[11px] font-medium max-w-[120px] truncate" title={p.command}>
+                          {p.name || p.command}
+                        </span>
+                        {p.pid && (
+                          <span className="text-[9px] font-mono text-zinc-500">
+                            :{p.pid}
+                          </span>
+                        )}
+                        {isRunning && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              killProcess(p.id);
+                            }}
+                            className="p-0.5 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-950/50 transition-colors"
+                            title="Stop Process"
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Process Console & Details */}
+                {activeProcess && (
+                  <div className="flex flex-col flex-1 min-h-[300px] rounded-xl bg-zinc-950/90 border border-zinc-800 overflow-hidden shadow-inner">
+                    {/* Console Header */}
+                    <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-900/80 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium ${
+                            activeProcess.status === 'running'
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-zinc-800 text-zinc-400 border border-zinc-700/60'
+                          }`}
+                        >
+                          {activeProcess.status === 'running' ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Running
+                            </>
+                          ) : (
+                            `Stopped (${activeProcess.exitCode ?? 0})`
+                          )}
+                        </span>
+                        <span className="text-xs font-mono font-semibold text-zinc-200 truncate" title={activeProcess.command}>
+                          {activeProcess.command}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-[10px] font-mono text-zinc-500 mr-0.5">
+                          {formatDuration(activeProcess.startedAt, activeProcess.completedAt)}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyLogs(activeProcess)}
+                          className="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                          title="Copy Output"
+                        >
+                          {copiedProcessId === activeProcess.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {activeProcess.status === 'running' ? (
+                          <button
+                            type="button"
+                            onClick={() => killProcess(activeProcess.id)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-300 hover:bg-rose-900/80 border border-rose-800/60 transition-colors"
+                            title="Kill Process Tree"
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                            <span>Stop</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startProcess(activeProcess.command, activeProcess.name)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-300 hover:bg-emerald-900/80 border border-emerald-800/60 transition-colors"
+                            title="Restart Process"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Restart</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Console Output Body */}
+                    <div className="flex-1 overflow-y-auto p-3 font-mono text-xs text-zinc-300 leading-5 select-text bg-black/75">
+                      {activeProcess.logs.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-zinc-600 text-[11px]">
+                          Process started. Waiting for terminal output...
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5 whitespace-pre-wrap break-all">
+                          {activeProcess.logs.map((line, idx) => (
+                            <div key={idx} className="text-zinc-300">
+                              {stripAnsi(line)}
+                            </div>
+                          ))}
+                          <div ref={terminalBottomRef} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Interactive stdin input bar */}
+                    <form
+                      onSubmit={handleSendStdin}
+                      className="p-1.5 border-t border-zinc-800 bg-zinc-950 flex items-center gap-1.5"
+                    >
+                      <input
+                        type="text"
+                        placeholder={
+                          activeProcess.status === 'running'
+                            ? 'Send input to process (stdin)...'
+                            : 'Process is stopped'
+                        }
+                        value={stdinText}
+                        onChange={(e) => setStdinText(e.target.value)}
+                        disabled={activeProcess.status !== 'running'}
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-md px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-500 outline-none font-mono focus:border-zinc-700 disabled:opacity-40"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!stdinText.trim() || activeProcess.status !== 'running'}
+                        className="p-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-300 hover:text-white transition-colors"
+                        title="Send to stdin"
+                      >
+                        <CornerDownLeft className="w-3.5 h-3.5" />
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -504,6 +817,26 @@ export const WorkspaceDrawer: React.FC = () => {
         <div className="px-3 py-2 border-t border-zinc-800 bg-zinc-950/70 flex items-center justify-between text-[11px] text-zinc-400">
           <span className="font-mono">
             {workspaceTree.totalFiles} files, {workspaceTree.totalDirs} directories
+          </span>
+          <button
+            type="button"
+            onClick={toggleWorkspaceDrawer}
+            className="text-[10px] text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'processes' && (
+        <div className="px-3 py-2 border-t border-zinc-800 bg-zinc-950/70 flex items-center justify-between text-[11px] text-zinc-400">
+          <span className="font-mono flex items-center gap-1.5">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                runningProcessCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'
+              }`}
+            />
+            {runningProcessCount} active / {processes.length} total processes
           </span>
           <button
             type="button"

@@ -542,4 +542,69 @@ export function registerIpcHandlers(
       return { isRepo: false, initialized: false, message: err.message };
     }
   });
+
+  // === PROCESS & MULTI-TERMINAL ENGINE ===
+  ipcMain.handle(
+    IPC_CHANNELS.WORKSPACE_PROCESS_START,
+    async (
+      _event,
+      workspacePathOrParams: any,
+      commandArg?: string,
+      options?: { isDaemon?: boolean; name?: string; waitMsBeforeAsync?: number }
+    ) => {
+      try {
+        const { WorkspaceProcessManager } = await import('../engine/tools/process-manager');
+        const manager = WorkspaceProcessManager.getInstance();
+        manager.setWindowGetter(getMainWindow);
+        return await manager.startProcess(workspacePathOrParams, commandArg, options);
+      } catch (err: any) {
+        console.error('[Handlers] Failed to start process:', err);
+        throw err;
+      }
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_PROCESS_LIST, async (_event, workspacePath?: string) => {
+    try {
+      const { WorkspaceProcessManager } = await import('../engine/tools/process-manager');
+      const manager = WorkspaceProcessManager.getInstance();
+      return manager.listProcesses(workspacePath);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to list processes:', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_PROCESS_KILL, async (_event, processId: string) => {
+    try {
+      const { WorkspaceProcessManager } = await import('../engine/tools/process-manager');
+      const manager = WorkspaceProcessManager.getInstance();
+      return await manager.killProcess(processId);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to kill process:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_PROCESS_INPUT, async (_event, processId: string, input: string) => {
+    try {
+      const { WorkspaceProcessManager } = await import('../engine/tools/process-manager');
+      const manager = WorkspaceProcessManager.getInstance();
+      return manager.sendInput(processId, input);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to send process input:', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_PROCESS_LOGS, async (_event, processId: string, lines?: number) => {
+    try {
+      const { WorkspaceProcessManager } = await import('../engine/tools/process-manager');
+      const manager = WorkspaceProcessManager.getInstance();
+      return manager.getProcessLogs(processId, lines);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to get process logs:', err);
+      return [];
+    }
+  });
 }

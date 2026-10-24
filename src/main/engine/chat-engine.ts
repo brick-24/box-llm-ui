@@ -15,6 +15,7 @@ import {
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
 import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
 import { WorkspaceTools } from './tools/workspace-tools';
+import { WorkspaceProcessManager } from './tools/process-manager';
 import { CODING_TOOLS, buildCodingSystemPrompt, buildGeneralSystemPrompt } from './tools/coding-tool-definitions';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
@@ -493,6 +494,25 @@ export class ChatEngine {
                       break;
                     }
                     case 'run_command': {
+                      if (item.input?.isDaemon) {
+                        const procMgr = WorkspaceProcessManager.getInstance();
+                        const procItem = await procMgr.startProcess({
+                          workspacePath: effectiveWorkspacePath,
+                          command: item.input?.command || '',
+                          name: item.input?.command ? item.input.command.split(' ')[0] : 'background-process',
+                          waitMsBeforeAsync: item.input?.waitMsBeforeAsync || 2000,
+                        });
+                        item.output = {
+                          isDaemon: true,
+                          processId: procItem.id,
+                          pid: procItem.pid,
+                          status: procItem.status,
+                          message: `Process started in background (ID: ${procItem.id}, PID: ${procItem.pid}). Real-time logs are streaming to the workspace process manager. You can manage this process using manage_process.`,
+                          initialLogs: procItem.logs.slice(-20),
+                        };
+                        break;
+                      }
+
                       let streamingAcc = '';
                       const timeoutMs =
                         item.input?.timeoutMs ||
@@ -519,6 +539,82 @@ export class ChatEngine {
                         }
                       );
                       item.output = res;
+                      break;
+                    }
+                    case 'manage_process': {
+                      const procMgr = WorkspaceProcessManager.getInstance();
+                      const action = item.input?.action;
+                      const procId = item.input?.processId;
+
+                      if (action === 'list') {
+                        const list = procMgr.listProcesses(effectiveWorkspacePath);
+                        item.output = {
+                          total: list.length,
+                          processes: list.map((p) => ({
+                            id: p.id,
+                            name: p.name,
+                            command: p.command,
+                            status: p.status,
+                            pid: p.pid,
+                            startedAt: p.startedAt,
+                            exitCode: p.exitCode,
+                          })),
+                        };
+                      } else if (action === 'status') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for status action.' };
+                        } else {
+                          const p = procMgr.getProcess(procId);
+                          if (!p) {
+                            item.output = { error: `Process ${procId} not found.` };
+                          } else {
+                            item.output = {
+                              id: p.id,
+                              name: p.name,
+                              command: p.command,
+                              status: p.status,
+                              pid: p.pid,
+                              startedAt: p.startedAt,
+                              exitCode: p.exitCode,
+                              lastLogs: p.logs.slice(-10),
+                            };
+                          }
+                        }
+                      } else if (action === 'logs') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for logs action.' };
+                        } else {
+                          const linesCount = item.input?.lines || 50;
+                          const logs = procMgr.getProcessLogs(procId, linesCount);
+                          item.output = { processId: procId, logsCount: logs.length, logs };
+                        }
+                      } else if (action === 'send_input') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for send_input action.' };
+                        } else {
+                          const ok = procMgr.sendInput(procId, item.input?.input || '');
+                          item.output = {
+                            success: ok,
+                            message: ok
+                              ? `Sent input to process ${procId}`
+                              : `Failed to write input to process ${procId}`,
+                          };
+                        }
+                      } else if (action === 'kill') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for kill action.' };
+                        } else {
+                          const ok = await procMgr.killProcess(procId);
+                          item.output = {
+                            success: ok,
+                            message: ok
+                              ? `Terminated process tree for ${procId}`
+                              : `Failed to terminate process ${procId}`,
+                          };
+                        }
+                      } else {
+                        item.output = { error: `Unknown action: ${action}` };
+                      }
                       break;
                     }
                     case 'grep_search': {

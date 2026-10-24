@@ -57,6 +57,15 @@ export const IPC_CHANNELS = {
   WORKSPACE_GIT_DIFF: 'workspace:git-diff',
   WORKSPACE_GIT_INIT: 'workspace:git-init',
 
+  // Process & Multi-Terminal Engine
+  WORKSPACE_PROCESS_START: 'workspace:process-start',
+  WORKSPACE_PROCESS_LIST: 'workspace:process-list',
+  WORKSPACE_PROCESS_KILL: 'workspace:process-kill',
+  WORKSPACE_PROCESS_INPUT: 'workspace:process-input',
+  WORKSPACE_PROCESS_LOGS: 'workspace:process-logs',
+  WORKSPACE_PROCESS_OUTPUT_EVENT: 'workspace:process-output',
+  WORKSPACE_PROCESS_EXIT_EVENT: 'workspace:process-exit',
+
   // Browser & Web Surfing
   BROWSER_VIEW_PAGE: 'browser:view-page',
   BROWSER_SEARCH_TEST: 'browser:search-test',

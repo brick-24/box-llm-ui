@@ -27,6 +27,9 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
   const [expandedCalls, setExpandedCalls] = useState<Record<string, boolean>>({});
   const openBrowserDrawer = useChatStore((s) => s.openBrowserDrawer);
   const openFilePreview = useChatStore((s) => s.openFilePreview);
+  const isWorkspaceDrawerOpen = useChatStore((s) => s.isWorkspaceDrawerOpen);
+  const toggleWorkspaceDrawer = useChatStore((s) => s.toggleWorkspaceDrawer);
+  const selectProcess = useChatStore((s) => s.selectProcess);
 
   if (!toolCalls || toolCalls.length === 0) return null;
 
@@ -51,6 +54,8 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
 
       // Workspace coding tools
       case 'run_command':
+        return <Terminal className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />;
+      case 'manage_process':
         return <Terminal className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />;
       case 'write_to_file':
         return <FileCode className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />;
@@ -95,7 +100,11 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
 
       // Coding tools
       case 'run_command':
-        return `$ ${item.input?.command || 'command'}`;
+        return item.input?.isDaemon
+          ? `⚡ Background: $ ${item.input?.command || 'command'}`
+          : `$ ${item.input?.command || 'command'}`;
+      case 'manage_process':
+        return `Process: ${item.input?.action || 'status'} ${item.input?.processId ? `(${item.input.processId})` : ''}`;
       case 'write_to_file':
         return `Write: ${item.input?.filePath || item.input?.path || 'file'}`;
       case 'replace_file_content':
@@ -132,6 +141,14 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
       } else if (item.name === 'take_page_screenshot') {
         label = 'Captured';
       } else if (item.name === 'run_command') {
+        if (item.output?.isDaemon) {
+          return (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Daemon PID {item.output.pid || ''}
+            </span>
+          );
+        }
         const exitCode = item.output?.exitCode ?? 0;
         label = `exit ${exitCode}`;
         if (exitCode !== 0) {
@@ -142,6 +159,8 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
             </span>
           );
         }
+      } else if (item.name === 'manage_process') {
+        label = item.output?.error ? 'Error' : 'Managed';
       } else if (item.name === 'write_to_file') {
         label = item.output?.bytesWritten !== undefined ? `${item.output.bytesWritten} B` : 'Saved';
       } else if (item.name === 'replace_file_content') {
@@ -273,9 +292,34 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
 
                 {/* Live Terminal for run_command */}
                 {isRunCommand && (
-                  <div className="flex flex-col gap-1 mt-1">
+                  <div className="flex flex-col gap-2 mt-1">
+                    {item.output?.isDaemon && (
+                      <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="text-[11px] font-mono text-emerald-300">
+                            Background process running (PID: {item.output.pid})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.output?.processId) {
+                              selectProcess(item.output.processId);
+                              if (!isWorkspaceDrawerOpen) toggleWorkspaceDrawer();
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          View in Processes
+                        </button>
+                      </div>
+                    )}
+
                     <div className="bg-zinc-950 rounded-lg border border-zinc-800/80 p-2.5 font-mono text-[11px] text-zinc-300 overflow-x-auto max-h-56 select-text whitespace-pre-wrap leading-relaxed shadow-inner">
                       {item.streamingOutput ||
+                        (item.output?.initialLogs && item.output.initialLogs.join('\n')) ||
                         item.output?.stdout ||
                         item.output?.output ||
                         (item.status === 'running' ? (
@@ -292,6 +336,17 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
                         {item.output.stderr}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* manage_process details */}
+                {item.name === 'manage_process' && (
+                  <div className="flex flex-col gap-1 mt-1">
+                    <div className="bg-zinc-950 rounded-lg border border-zinc-800/80 p-2.5 font-mono text-[11px] text-zinc-300 overflow-x-auto max-h-48 select-text whitespace-pre-wrap leading-relaxed shadow-inner">
+                      {typeof item.output === 'string'
+                        ? item.output
+                        : JSON.stringify(item.output, null, 2)}
+                    </div>
                   </div>
                 )}
 

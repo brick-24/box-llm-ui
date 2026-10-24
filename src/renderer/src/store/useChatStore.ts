@@ -7,6 +7,8 @@ import {
   StreamChunkEvent,
   StreamEndEvent,
   StreamErrorEvent,
+  WorkspaceTreeNode,
+  WorkspaceFilePreview,
 } from '@shared/types';
 import { useProviderStore } from './useProviderStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -31,6 +33,13 @@ interface ChatState {
   activeBrowserDrawerScreenshot: string | null;
   activeBrowserDrawerMarkdown: string | null;
 
+  // Workspace & Coding Engine State
+  workspacePath: string | null;
+  isWorkspaceDrawerOpen: boolean;
+  workspaceTree: { tree: WorkspaceTreeNode; summary: string; totalFiles: number; totalDirs: number } | null;
+  selectedPreviewFile: WorkspaceFilePreview | null;
+  isLoadingTree: boolean;
+
   init: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
   createConversation: (providerId?: string, modelId?: string) => Promise<Conversation | null>;
@@ -41,6 +50,15 @@ interface ChatState {
   setWebBrowsing: (enabled: boolean) => void;
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
   closeBrowserDrawer: () => void;
+
+  // Workspace Actions
+  setWorkspacePath: (path: string | null) => Promise<void>;
+  selectWorkspaceDialog: () => Promise<void>;
+  toggleWorkspaceDrawer: () => void;
+  loadWorkspaceTree: () => Promise<void>;
+  openFilePreview: (relativePath: string) => Promise<void>;
+  closeFilePreview: () => void;
+  openWorkspaceInExplorer: () => Promise<void>;
 
   sendMessage: (content: string) => Promise<void>;
   editAndBranchMessage: (targetMessageId: string, newContent: string) => Promise<void>;
@@ -74,6 +92,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeBrowserDrawerTitle: null,
   activeBrowserDrawerScreenshot: null,
   activeBrowserDrawerMarkdown: null,
+  workspacePath: null,
+  isWorkspaceDrawerOpen: false,
+  workspaceTree: null,
+  selectedPreviewFile: null,
+  isLoadingTree: false,
 
   init: async () => {
     if (!window.electronAPI) return;
@@ -218,6 +241,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       // Reload conversations to update timestamps
       window.electronAPI.getConversations().then((updated) => set({ conversations: updated }));
+      // Auto-refresh workspace tree if workspace is active
+      if (get().workspacePath) {
+        get().loadWorkspaceTree();
+      }
     });
 
     window.electronAPI.onStreamError((data: StreamErrorEvent) => {
@@ -316,6 +343,54 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     });
+
+    window.electronAPI.onToolCommandOutput?.((data: any) => {
+      const { conversationId, messageId, toolCallId, totalOutput } = data;
+      if (conversationId === get().activeConversationId) {
+        set((state) => {
+          let nextAll: ChatMessage[];
+          const hasTarget = state.allMessages.some((m) => m.id === messageId);
+
+          const updateOutput = (existingCalls?: any[]) => {
+            if (!existingCalls) return [];
+            return existingCalls.map((c) =>
+              c.id === toolCallId ? { ...c, streamingOutput: totalOutput } : c
+            );
+          };
+
+          if (hasTarget) {
+            nextAll = state.allMessages.map((m) =>
+              m.id === messageId ? { ...m, toolCalls: updateOutput(m.toolCalls) } : m
+            );
+          } else {
+            const lastIdx = state.allMessages.findLastIndex(
+              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
+            );
+            if (lastIdx !== -1) {
+              nextAll = [...state.allMessages];
+              nextAll[lastIdx] = {
+                ...nextAll[lastIdx],
+                toolCalls: updateOutput(nextAll[lastIdx].toolCalls),
+              };
+            } else {
+              return {};
+            }
+          }
+
+          const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(
+            nextAll,
+            state.activeBranchMap
+          );
+
+          return {
+            allMessages: nextAll,
+            messages: activeMessages,
+            siblingsMap,
+            activeBranchMap,
+          };
+        });
+      }
+    });
   },
 
   selectConversation: async (id: string) => {
@@ -325,10 +400,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(msgs, {});
 
     const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
+    const wp = conv?.workspacePath || null;
     set({
       activeConversationId: id,
       activeConversation: conv,
       isWebBrowsing: conv?.webBrowsingEnabled !== undefined ? Boolean(conv.webBrowsingEnabled) : defaultWeb,
+      workspacePath: wp,
       allMessages: msgs,
       messages: activeMessages,
       siblingsMap,
@@ -336,7 +413,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachments: [],
       isStreaming: false,
       streamingMessageId: null,
+      selectedPreviewFile: null,
     });
+
+    if (wp) {
+      get().loadWorkspaceTree();
+    } else {
+      set({ workspaceTree: null });
+    }
 
     if (conv?.providerId) {
       useProviderStore.getState().setActiveProvider(conv.providerId);
@@ -402,6 +486,69 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeBrowserDrawerScreenshot: null,
       activeBrowserDrawerMarkdown: null,
     });
+  },
+
+  setWorkspacePath: async (path: string | null) => {
+    const { activeConversationId } = get();
+    set({ workspacePath: path });
+    if (activeConversationId) {
+      await get().updateConversation({ id: activeConversationId, workspacePath: path || undefined });
+    }
+    if (path) {
+      await get().loadWorkspaceTree();
+    } else {
+      set({ workspaceTree: null, selectedPreviewFile: null });
+    }
+  },
+
+  selectWorkspaceDialog: async () => {
+    if (!window.electronAPI) return;
+    const path = await window.electronAPI.selectWorkspaceDialog();
+    if (path) {
+      await get().setWorkspacePath(path);
+    }
+  },
+
+  toggleWorkspaceDrawer: () => {
+    set((state) => ({ isWorkspaceDrawerOpen: !state.isWorkspaceDrawerOpen }));
+  },
+
+  loadWorkspaceTree: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) {
+      set({ workspaceTree: null, isLoadingTree: false });
+      return;
+    }
+    set({ isLoadingTree: true });
+    try {
+      const data = await window.electronAPI.getWorkspaceTree(workspacePath);
+      set({ workspaceTree: data, isLoadingTree: false });
+    } catch {
+      set({ workspaceTree: null, isLoadingTree: false });
+    }
+  },
+
+  openFilePreview: async (relativePath: string) => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) return;
+    try {
+      const preview = await window.electronAPI.readWorkspaceFile(workspacePath, relativePath);
+      if (preview) {
+        set({ selectedPreviewFile: preview });
+      }
+    } catch (err) {
+      console.error('Failed to preview file:', err);
+    }
+  },
+
+  closeFilePreview: () => {
+    set({ selectedPreviewFile: null });
+  },
+
+  openWorkspaceInExplorer: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) return;
+    await window.electronAPI.openWorkspaceInExplorer(workspacePath);
   },
 
   updateConversation: async (updates) => {
@@ -553,6 +700,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: tempUserMsg.id,
         parentId,
         webBrowsing: get().isWebBrowsing,
+        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(convId);
@@ -671,6 +819,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: newForkedUserMsgId,
         parentId,
         webBrowsing: get().isWebBrowsing,
+        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);
@@ -785,6 +934,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         parentId: parentUserMsg.id,
         isRegeneration: true,
         webBrowsing: get().isWebBrowsing,
+        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);

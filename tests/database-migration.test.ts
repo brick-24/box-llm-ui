@@ -93,13 +93,14 @@ describe('Database Migration Tests', () => {
     const appDb = new AppDatabase(tmpDir);
     await appDb.initialize();
 
-    // 1. Create a conversation with web browsing enabled
+    // 1. Create a conversation with web browsing and workspace path enabled
     appDb.createConversation({
       id: 'conv-web-1',
       title: 'Web Browsing Chat',
       providerId: 'prov-1',
       modelId: 'gpt-4o',
       webBrowsingEnabled: true,
+      workspacePath: 'C:/projects/my-test-app',
       createdAt: 1000,
       updatedAt: 1000,
     });
@@ -107,14 +108,16 @@ describe('Database Migration Tests', () => {
     const conv = appDb.getConversation('conv-web-1');
     expect(conv).toBeDefined();
     expect(conv?.webBrowsingEnabled).toBe(true);
+    expect(conv?.workspacePath).toBe('C:/projects/my-test-app');
 
-    // 2. Save a message with tool calls and citations
+    // 2. Save a message with tool calls, toolCallId, and citations
     appDb.saveMessage({
       id: 'msg-web-1',
       conversationId: 'conv-web-1',
       role: 'assistant',
       content: 'Here are the latest Electron 34 features...',
       status: 'completed',
+      toolCallId: 'call-1',
       toolCalls: [
         {
           id: 'call-1',
@@ -138,6 +141,7 @@ describe('Database Migration Tests', () => {
 
     const msgs = appDb.getMessages('conv-web-1');
     expect(msgs).toHaveLength(1);
+    expect(msgs[0].toolCallId).toBe('call-1');
     expect(msgs[0].toolCalls).toHaveLength(1);
     expect(msgs[0].toolCalls?.[0].name).toBe('search_web');
     expect(msgs[0].citations).toHaveLength(1);

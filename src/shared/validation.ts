@@ -81,6 +81,7 @@ export const ToolCallItemSchema = z.object({
   status: z.enum(['pending', 'running', 'completed', 'error']),
   error: z.string().optional(),
   durationMs: z.number().optional(),
+  streamingOutput: z.string().optional(),
 });
 
 export const ChatMessageSchema = z.object({
@@ -119,6 +120,7 @@ export const ConversationSchema = z.object({
   topP: z.number().min(0).max(1).optional(),
   isPinned: z.boolean().optional(),
   webBrowsingEnabled: z.boolean().optional(),
+  workspacePath: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -138,4 +140,7 @@ export const AppSettingsSchema = z.object({
   searchProvider: z.enum(['duckduckgo', 'brave', 'tavily', 'serper']).default('duckduckgo'),
   searchApiKey: z.string().optional(),
   maxSearchResults: z.number().default(5),
+  terminalCommandPolicy: z.enum(['auto', 'confirm']).default('auto'),
+  commandTimeoutSec: z.number().default(60),
+  maxAgentTurns: z.number().default(20),
 });

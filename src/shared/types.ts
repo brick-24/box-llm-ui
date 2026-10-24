@@ -104,6 +104,7 @@ export interface ToolCallItem {
   status: ToolCallStatus;
   error?: string;
   durationMs?: number;
+  streamingOutput?: string;
 }
 
 export interface ChatMessage {
@@ -138,8 +139,24 @@ export interface Conversation {
   topP?: number;
   isPinned?: boolean;
   webBrowsingEnabled?: boolean;
+  workspacePath?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface WorkspaceTreeNode {
+  name: string;
+  path: string;
+  isDir: boolean;
+  sizeBytes?: number;
+  children?: WorkspaceTreeNode[];
+}
+
+export interface WorkspaceFilePreview {
+  path: string;
+  content: string;
+  sizeBytes: number;
+  lines: number;
 }
 
 export interface AppSettings {
@@ -157,6 +174,9 @@ export interface AppSettings {
   searchProvider: 'duckduckgo' | 'brave' | 'tavily' | 'serper';
   searchApiKey?: string;
   maxSearchResults: number;
+  terminalCommandPolicy: 'auto' | 'confirm';
+  commandTimeoutSec: number;
+  maxAgentTurns: number;
 }
 
 export interface DiagnosticLog {

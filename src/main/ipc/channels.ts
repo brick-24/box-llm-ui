@@ -45,6 +45,13 @@ export const IPC_CHANNELS = {
   STREAM_END: 'chat:stream-end',
   STREAM_ERROR: 'chat:stream-error',
   TOOL_CALL_UPDATE: 'chat:tool-call-update',
+  TOOL_COMMAND_OUTPUT: 'chat:tool-command-output',
+
+  // Workspace & Coding Engine
+  WORKSPACE_SELECT_DIALOG: 'workspace:select-dialog',
+  WORKSPACE_GET_TREE: 'workspace:get-tree',
+  WORKSPACE_READ_FILE: 'workspace:read-file',
+  WORKSPACE_OPEN_EXPLORER: 'workspace:open-explorer',
 
   // Browser & Web Surfing
   BROWSER_VIEW_PAGE: 'browser:view-page',

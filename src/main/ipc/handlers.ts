@@ -430,4 +430,64 @@ export function registerIpcHandlers(
       return [];
     }
   });
+
+  // === WORKSPACE & CODING ENGINE ===
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SELECT_DIALOG, async () => {
+    const win = getMainWindow();
+    if (!win) return null;
+
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Select Project Workspace Directory',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (res.canceled || !res.filePaths.length) {
+      return null;
+    }
+
+    return res.filePaths[0];
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_TREE, async (_event, workspacePath: string) => {
+    if (!workspacePath || typeof workspacePath !== 'string') return null;
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      return WorkspaceTools.listDir(workspacePath, undefined, 4);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to get workspace tree:', err);
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_READ_FILE, async (_event, workspacePath: string, relativePath: string) => {
+    if (!workspacePath || !relativePath) return null;
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      const safe = WorkspaceTools.resolveSafePath(workspacePath, relativePath);
+      const stat = fs.statSync(safe);
+      if (stat.isDirectory()) return null;
+      const content = fs.readFileSync(safe, 'utf8');
+      const lines = content.split(/\r?\n/).length;
+      return {
+        path: relativePath,
+        content,
+        sizeBytes: stat.size,
+        lines,
+      };
+    } catch (err: any) {
+      console.error('[Handlers] Failed to read workspace file:', err);
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_OPEN_EXPLORER, async (_event, workspacePath: string) => {
+    if (!workspacePath) return { success: false };
+    try {
+      await shell.openPath(workspacePath);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Handlers] Failed to open path in explorer:', err);
+      return { success: false, error: err.message };
+    }
+  });
 }

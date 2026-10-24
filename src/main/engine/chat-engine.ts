@@ -14,6 +14,8 @@ import {
 } from '../../shared/types';
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
 import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
+import { WorkspaceTools } from './tools/workspace-tools';
+import { CODING_TOOLS, buildCodingSystemPrompt } from './tools/coding-tool-definitions';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
   if (!text) return false;
@@ -37,6 +39,7 @@ export interface SendMessageOptions {
   parentId?: string | null;
   isRegeneration?: boolean;
   webBrowsing?: boolean;
+  workspacePath?: string;
 }
 
 export class ChatEngine {
@@ -251,6 +254,20 @@ export class ChatEngine {
       ? options.webBrowsing
       : Boolean(conv.webBrowsingEnabled);
 
+    const effectiveWorkspacePath = options.workspacePath || conv.workspacePath;
+    const hasWorkspace = Boolean(effectiveWorkspacePath && effectiveWorkspacePath.trim());
+
+    const activeTools = [
+      ...(hasWorkspace ? CODING_TOOLS : []),
+      ...(isWebBrowsing ? WEB_TOOLS : []),
+    ];
+    const hasActiveTools = activeTools.length > 0;
+
+    const baseSystemPrompt = options.systemPrompt || conv.systemPrompt;
+    const effectiveSystemPrompt = hasWorkspace
+      ? buildCodingSystemPrompt(effectiveWorkspacePath!, baseSystemPrompt)
+      : baseSystemPrompt;
+
     const executedToolCalls: ToolCallItem[] = [];
     const accumulatedCitations: WebCitation[] = [];
     const settings = this.db.getSettings();
@@ -269,16 +286,19 @@ export class ChatEngine {
       if (controller.signal.aborted) break;
 
       const trajectory: ChatMessage[] = [...history];
-      const maxWebTurns = isWebBrowsing ? 6 : 1;
-      let webTurn = 0;
+      const maxTurns = hasWorkspace
+        ? (settings.maxAgentTurns || 20)
+        : (isWebBrowsing ? 6 : 1);
+      let turnIndex = 0;
 
-      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing})`, {
+      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing}, workspace: ${hasWorkspace})`, {
         endpoint: config.chatEndpoint,
         protocol: config.protocol,
         model: currentModel,
         messageCount: trajectory.length,
         streaming: config.streamingEnabled,
         webBrowsing: isWebBrowsing,
+        workspace: effectiveWorkspacePath,
         messagesPreview: trajectory.slice(-3).map((m) => ({
           role: m.role,
           content: m.content.length > 300 ? `${m.content.slice(0, 300)}...` : m.content,
@@ -286,8 +306,8 @@ export class ChatEngine {
       });
 
       try {
-        while (webTurn < maxWebTurns && !controller.signal.aborted) {
-          webTurn++;
+        while (turnIndex < maxTurns && !controller.signal.aborted) {
+          turnIndex++;
           let turnToolCalls: any[] | undefined;
           let turnFullText = '';
           let turnUsage: TokenUsage | undefined;
@@ -301,11 +321,11 @@ export class ChatEngine {
               {
                 messages: trajectory,
                 model: currentModel,
-                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                systemPrompt: effectiveSystemPrompt,
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               {
                 onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
@@ -341,11 +361,11 @@ export class ChatEngine {
               {
                 messages: trajectory,
                 model: currentModel,
-                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                systemPrompt: effectiveSystemPrompt,
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               controller.signal
             );
@@ -371,7 +391,7 @@ export class ChatEngine {
           if (controller.signal.aborted) break;
 
           // Check if tools were requested
-          if (isWebBrowsing && turnToolCalls && turnToolCalls.length > 0 && webTurn < maxWebTurns) {
+          if (hasActiveTools && turnToolCalls && turnToolCalls.length > 0 && turnIndex < maxTurns) {
             const currentTurnItems: ToolCallItem[] = [];
 
             for (const tc of turnToolCalls) {
@@ -402,13 +422,122 @@ export class ChatEngine {
               // Execute tool
               const toolStart = Date.now();
               try {
-                const output = await executeWebTool(item.name, item.input, settings);
-                item.durationMs = Date.now() - toolStart;
-                item.output = output.result;
-                item.status = 'completed';
-                if (output.citations) {
-                  accumulatedCitations.push(...output.citations);
+                if (
+                  [
+                    'write_to_file',
+                    'view_file',
+                    'replace_file_content',
+                    'list_dir',
+                    'run_command',
+                    'grep_search',
+                  ].includes(item.name)
+                ) {
+                  if (!effectiveWorkspacePath) {
+                    throw new Error(
+                      `Workspace tool "${item.name}" invoked but no workspace folder is set for this conversation.`
+                    );
+                  }
+
+                  switch (item.name) {
+                    case 'write_to_file': {
+                      const res = WorkspaceTools.writeToFile(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.content || '',
+                        item.input?.overwrite !== false
+                      );
+                      item.output = {
+                        success: true,
+                        filePath: res.filePath,
+                        bytesWritten: res.bytesWritten,
+                        isNew: res.isNew,
+                      };
+                      break;
+                    }
+                    case 'view_file': {
+                      const res = WorkspaceTools.viewFile(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.startLine,
+                        item.input?.endLine
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'replace_file_content': {
+                      const res = WorkspaceTools.replaceFileContent(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.targetContent || '',
+                        item.input?.replacementContent || ''
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'list_dir': {
+                      const res = WorkspaceTools.listDir(
+                        effectiveWorkspacePath,
+                        item.input?.dirPath || '',
+                        item.input?.maxDepth || 3
+                      );
+                      item.output = {
+                        summary: res.summary,
+                        totalFiles: res.totalFiles,
+                        totalDirs: res.totalDirs,
+                      };
+                      break;
+                    }
+                    case 'run_command': {
+                      let streamingAcc = '';
+                      const timeoutMs =
+                        item.input?.timeoutMs ||
+                        (settings.commandTimeoutSec ? settings.commandTimeoutSec * 1000 : 60000);
+                      const res = await WorkspaceTools.runCommand(
+                        effectiveWorkspacePath,
+                        item.input?.command || '',
+                        {
+                          timeoutMs,
+                          signal: controller.signal,
+                          onChunk: (chunk) => {
+                            streamingAcc += chunk;
+                            item.streamingOutput = streamingAcc;
+                            if (win) {
+                              win.webContents.send('chat:tool-command-output', {
+                                conversationId,
+                                messageId: assistantMsgId,
+                                toolCallId: item.id,
+                                chunk,
+                                totalOutput: streamingAcc,
+                              });
+                            }
+                          },
+                        }
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'grep_search': {
+                      const res = WorkspaceTools.grepSearch(
+                        effectiveWorkspacePath,
+                        item.input?.query || '',
+                        Boolean(item.input?.isRegex),
+                        item.input?.includesPattern
+                      );
+                      item.output = res;
+                      break;
+                    }
+                  }
+                } else {
+                  // Web tools
+                  const output = await executeWebTool(item.name, item.input, settings);
+                  item.output = output.result;
+                  if (output.citations) {
+                    accumulatedCitations.push(...output.citations);
+                  }
                 }
+
+                item.durationMs = Date.now() - toolStart;
+                item.status = 'completed';
               } catch (err: any) {
                 item.durationMs = Date.now() - toolStart;
                 item.status = 'error';

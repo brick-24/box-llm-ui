@@ -8,9 +8,19 @@ import {
   StreamErrorEvent,
   ToolCallUpdateEvent,
   MessageAttachment,
+  WorkspaceTreeNode,
+  WorkspaceFilePreview,
 } from '../shared/types';
 import { SendMessageOptions } from '../main/engine/chat-engine';
 import { IPC_CHANNELS } from '../main/ipc/channels';
+
+export interface ToolCommandOutputEvent {
+  conversationId: string;
+  messageId: string;
+  toolCallId: string;
+  chunk: string;
+  totalOutput: string;
+}
 
 export interface ElectronAPI {
   // Providers
@@ -45,6 +55,12 @@ export interface ElectronAPI {
   browsePage: (url: string, takeScreenshot?: boolean) => Promise<any>;
   searchWeb: (query: string) => Promise<any[]>;
 
+  // Workspace & Coding Engine
+  selectWorkspaceDialog: () => Promise<string | null>;
+  getWorkspaceTree: (workspacePath: string) => Promise<{ tree: WorkspaceTreeNode; summary: string; totalFiles: number; totalDirs: number } | null>;
+  readWorkspaceFile: (workspacePath: string, relativePath: string) => Promise<WorkspaceFilePreview | null>;
+  openWorkspaceInExplorer: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+
   // Settings & Diagnostics
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>;
@@ -63,6 +79,7 @@ export interface ElectronAPI {
   onStreamEnd: (callback: (data: StreamEndEvent) => void) => () => void;
   onStreamError: (callback: (data: StreamErrorEvent) => void) => () => void;
   onToolCallUpdate: (callback: (data: ToolCallUpdateEvent) => void) => () => void;
+  onToolCommandOutput: (callback: (data: ToolCommandOutputEvent) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -95,6 +112,11 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.BROWSER_VIEW_PAGE, url, takeScreenshot),
   searchWeb: (query) => ipcRenderer.invoke(IPC_CHANNELS.BROWSER_SEARCH_TEST, query),
 
+  selectWorkspaceDialog: () => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIALOG),
+  getWorkspaceTree: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_TREE, wp),
+  readWorkspaceFile: (wp, rp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_READ_FILE, wp, rp),
+  openWorkspaceInExplorer: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_OPEN_EXPLORER, wp),
+
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
   saveSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),
   getDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET),
@@ -125,6 +147,11 @@ const api: ElectronAPI = {
     const handler = (_event: any, data: ToolCallUpdateEvent) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.TOOL_CALL_UPDATE, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.TOOL_CALL_UPDATE, handler);
+  },
+  onToolCommandOutput: (callback) => {
+    const handler = (_event: any, data: ToolCommandOutputEvent) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.TOOL_COMMAND_OUTPUT, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.TOOL_COMMAND_OUTPUT, handler);
   },
 };
 

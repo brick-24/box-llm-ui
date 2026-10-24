@@ -123,4 +123,73 @@ describe('WorkspaceTools - Agentic Coding Engine', () => {
     expect(treeData.summary).toContain('index.ts');
     expect(treeData.summary).toContain('package.json');
   });
+
+  it('traverses deep nested directories and sets isDir and sizeBytes correctly', async () => {
+    await tools.writeToFile('a/b/c/d/e/deep.ts', 'export const DEEP = 42;');
+
+    const treeData = await tools.getWorkspaceTree(10);
+    expect(treeData.totalFiles).toBe(1);
+    expect(treeData.tree.isDir).toBe(true);
+
+    // Navigate down to deep.ts
+    let current = treeData.tree;
+    expect(current.children?.length).toBe(1);
+    const childA = current.children![0];
+    expect(childA.name).toBe('a');
+    expect(childA.isDir).toBe(true);
+
+    const childB = childA.children![0];
+    expect(childB.name).toBe('b');
+    expect(childB.isDir).toBe(true);
+
+    const childC = childB.children![0];
+    const childD = childC.children![0];
+    const childE = childD.children![0];
+    const leaf = childE.children![0];
+
+    expect(leaf.name).toBe('deep.ts');
+    expect(leaf.isDir).toBe(false);
+    expect(leaf.sizeBytes).toBeGreaterThan(0);
+  });
+
+  it('initializes git repository and tracks working changes and commits', async () => {
+    // 1. Check before init
+    const beforeInit = await tools.getGitStatus();
+    expect(beforeInit.isRepo).toBe(false);
+
+    // 2. Initialize Git repo
+    const initRes = await tools.ensureGitRepo();
+    expect(initRes.isRepo).toBe(true);
+    expect(initRes.initialized).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, '.git'))).toBe(true);
+
+    // 3. Status with untracked file
+    await tools.writeToFile('README.md', '# Test Project');
+    const statusWithUntracked = await tools.getGitStatus();
+    expect(statusWithUntracked.isRepo).toBe(true);
+    expect(statusWithUntracked.clean).toBe(false);
+    expect(statusWithUntracked.changes.length).toBeGreaterThanOrEqual(1);
+    expect(statusWithUntracked.changes[0].path).toBe('README.md');
+
+    // 4. Configure git user and commit with agent message (combined for performance)
+    await tools.runCommand(
+      'git config user.name "Test Agent"; git config user.email "agent@test.local"; git add README.md; git commit -m "Agent: scaffold test project"'
+    );
+
+    // 5. Verify commit in log
+    const commits = await tools.getGitLog();
+    expect(commits.length).toBeGreaterThanOrEqual(1);
+    expect(commits[0].message).toContain('Agent: scaffold test project');
+    expect(commits[0].isAgent).toBe(true);
+
+    // 6. Working tree should now be clean
+    const cleanStatus = await tools.getGitStatus();
+    expect(cleanStatus.clean).toBe(true);
+
+    // 7. Modifying file and checking diff
+    await tools.writeToFile('README.md', '# Test Project\nNew Line\n');
+    const diff = await tools.getGitDiff('README.md');
+    expect(diff).toContain('+New Line');
+  }, 30000);
 });
+

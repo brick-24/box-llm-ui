@@ -159,6 +159,31 @@ export interface WorkspaceFilePreview {
   lines: number;
 }
 
+export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed' | 'copied';
+
+export interface GitFileChange {
+  path: string;
+  status: GitFileStatus;
+  staged: boolean;
+  statusCode: string;
+}
+
+export interface GitCommitItem {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
+  isAgent: boolean;
+}
+
+export interface GitStatusResult {
+  isRepo: boolean;
+  branch: string;
+  changes: GitFileChange[];
+  clean: boolean;
+  error?: string;
+}
+
 export interface AppSettings {
   theme: 'dark' | 'light' | 'system';
   fontSize: 'sm' | 'md' | 'lg';

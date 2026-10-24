@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { ToolDefinition } from '../../browser/web-tools';
 
 export const CODING_TOOLS: ToolDefinition[] = [
@@ -151,10 +152,80 @@ export const CODING_TOOLS: ToolDefinition[] = [
   },
 ];
 
+export interface SystemEnvironmentInfo {
+  osName: string;
+  platform: NodeJS.Platform;
+  release: string;
+  arch: string;
+  shell: string;
+  shellType: 'powershell' | 'bash' | 'zsh' | 'cmd' | 'unknown';
+  rules: string[];
+}
+
+export function getSystemEnvironmentInfo(): SystemEnvironmentInfo {
+  const platform = process.platform;
+  const release = os.release();
+  const arch = process.arch;
+
+  let osName = 'Unknown OS';
+  if (platform === 'win32') {
+    osName = `Windows (NT ${release})`;
+  } else if (platform === 'darwin') {
+    osName = `macOS (Darwin ${release})`;
+  } else if (platform === 'linux') {
+    osName = `Linux (${release})`;
+  }
+
+  const isWin = platform === 'win32';
+  const shell = isWin ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
+  const shellType: 'powershell' | 'bash' = isWin ? 'powershell' : 'bash';
+
+  const rules: string[] = isWin
+    ? [
+        "DO NOT use POSIX '&&' or '||' statement chaining (PowerShell 5.1 syntax error). Use ';' to separate sequential commands (e.g. 'npm run build; npm test') or invoke separate run_command calls.",
+        "DO NOT use bash-specific environment variable exports like 'export VAR=val'. In PowerShell, use '$env:VAR=\"val\"' or pass environment parameters directly.",
+        "DO NOT use Unix-specific commands like 'touch', 'ls -la', 'cat file', 'rm -rf'. Use node scripts, git commands, or native PowerShell equivalents.",
+        "Always quote file paths or arguments that might contain spaces with double quotes.",
+        "For git commands, execute standard git commands (e.g. 'git status', 'git add .', 'git commit -m \"...\"').",
+      ]
+    : [
+        "Use standard POSIX Bash/Zsh syntax.",
+        "Command chaining with '&&', '||', and ';' is fully supported.",
+        "Environment variables can be exported with 'export VAR=val'.",
+        "Standard Unix utilities ('ls', 'mkdir -p', 'rm -rf', etc.) are supported.",
+      ];
+
+  return {
+    osName,
+    platform,
+    release,
+    arch,
+    shell,
+    shellType,
+    rules,
+  };
+}
+
 export function buildCodingSystemPrompt(workspacePath: string, userSystemPrompt?: string): string {
   const normalizedPath = workspacePath.replace(/\\/g, '/');
+  const env = getSystemEnvironmentInfo();
+
+  const rulesFormatted = env.rules.map((r, i) => `${i + 1}. ${r}`).join('\n');
+
   const baseInstruction = `You are an elite, autonomous software engineering agent operating directly inside the project workspace at:
 \`${normalizedPath}\`
+
+<system_environment>
+Operating System: ${env.osName} (${env.platform}, ${env.arch})
+Terminal Shell: ${env.shell}
+Workspace Root: ${normalizedPath}
+</system_environment>
+
+<terminal_execution_rules>
+When executing commands via \`run_command\`, commands run inside ${env.shell}.
+CRITICAL RULES TO AVOID TERMINAL EXECUTION ERRORS:
+${rulesFormatted}
+</terminal_execution_rules>
 
 You have full access to workspace coding tools:
 - \`write_to_file\`: Create new project files or overwrite existing ones.
@@ -169,10 +240,12 @@ Engineering Guidelines:
 2. For project creation: Scaffold complete, production-ready code with proper configs (e.g. package.json, tsconfig.json, vite.config.ts), run setup commands (e.g. \`npm install\`), and verify that builds succeed.
 3. Surgical edits: Prefer \`replace_file_content\` for targeted modifications.
 4. Verify changes: Run tests or build commands using \`run_command\` whenever appropriate to verify your work before concluding.
-5. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.`;
+5. Respect terminal syntax: Always adhere to the <terminal_execution_rules> above to avoid syntax failures.
+6. Be concise and actionable: Explain what you accomplished cleanly with clear next steps.`;
 
   if (userSystemPrompt && userSystemPrompt.trim()) {
     return `${userSystemPrompt.trim()}\n\n---\n${baseInstruction}`;
   }
   return baseInstruction;
 }
+

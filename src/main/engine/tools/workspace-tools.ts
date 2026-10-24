@@ -1,7 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { WorkspaceTreeNode } from '../../../shared/types';
+import {
+  WorkspaceTreeNode,
+  GitStatusResult,
+  GitCommitItem,
+  GitFileChange,
+  GitFileStatus,
+} from '../../../shared/types';
 
 export interface CommandExecutionResult {
   command: string;
@@ -81,7 +87,7 @@ export class WorkspaceTools {
     return WorkspaceTools.replaceFileContent(this.workspaceRoot, filePath, targetContent, replacementContent);
   }
 
-  public listDir(subPath = '', maxDepth = 3) {
+  public listDir(subPath = '', maxDepth = 15) {
     return WorkspaceTools.listDir(this.workspaceRoot, subPath, maxDepth);
   }
 
@@ -99,8 +105,24 @@ export class WorkspaceTools {
     return WorkspaceTools.grepSearch(this.workspaceRoot, query, isRegex, includesPattern);
   }
 
-  public getWorkspaceTree(maxDepth = 4) {
+  public getWorkspaceTree(maxDepth = 20) {
     return WorkspaceTools.listDir(this.workspaceRoot, '', maxDepth);
+  }
+
+  public ensureGitRepo() {
+    return WorkspaceTools.ensureGitRepo(this.workspaceRoot);
+  }
+
+  public getGitStatus() {
+    return WorkspaceTools.getGitStatus(this.workspaceRoot);
+  }
+
+  public getGitLog(limit = 15) {
+    return WorkspaceTools.getGitLog(this.workspaceRoot, limit);
+  }
+
+  public getGitDiff(filePath?: string) {
+    return WorkspaceTools.getGitDiff(this.workspaceRoot, filePath);
   }
 
   /**
@@ -264,7 +286,7 @@ export class WorkspaceTools {
   public static listDir(
     workspaceRoot: string,
     subPath = '',
-    maxDepth = 3
+    maxDepth = 15
   ): { tree: WorkspaceTreeNode; summary: string; totalFiles: number; totalDirs: number } {
     const targetDir = this.resolveSafePath(workspaceRoot, subPath);
 
@@ -274,6 +296,7 @@ export class WorkspaceTools {
 
     let totalFiles = 0;
     let totalDirs = 0;
+    const MAX_NODES = 5000;
 
     const buildTree = (currentDir: string, depth: number): WorkspaceTreeNode => {
       const relPath = this.getRelativePath(workspaceRoot, currentDir);
@@ -298,7 +321,7 @@ export class WorkspaceTools {
         children: [],
       };
 
-      if (depth >= maxDepth) {
+      if (depth >= maxDepth || totalFiles + totalDirs >= MAX_NODES) {
         return node;
       }
 
@@ -579,4 +602,222 @@ export class WorkspaceTools {
       isTruncated,
     };
   }
+
+  /**
+   * Checks if workspace has a .git repository initialized, and initializes one if not.
+   */
+  public static async ensureGitRepo(
+    workspaceRoot: string
+  ): Promise<{ isRepo: boolean; initialized: boolean; message: string }> {
+    const absRoot = path.resolve(workspaceRoot);
+    if (!fs.existsSync(absRoot)) {
+      return { isRepo: false, initialized: false, message: 'Workspace directory does not exist' };
+    }
+
+    const gitDir = path.join(absRoot, '.git');
+    if (fs.existsSync(gitDir)) {
+      return { isRepo: true, initialized: false, message: 'Git repository already initialized' };
+    }
+
+    try {
+      const res = await this.runCommand(absRoot, 'git init');
+      if (res.exitCode === 0) {
+        return { isRepo: true, initialized: true, message: 'Initialized empty Git repository' };
+      }
+      return {
+        isRepo: false,
+        initialized: false,
+        message: res.stderr.trim() || 'Failed to initialize Git repository (exit code ' + res.exitCode + ')',
+      };
+    } catch (err: any) {
+      return { isRepo: false, initialized: false, message: err.message || 'Git is not installed or available' };
+    }
+  }
+
+  /**
+   * Retrieves parsed git status with modified, added, deleted, and untracked files.
+   */
+  public static async getGitStatus(workspaceRoot: string): Promise<GitStatusResult> {
+    const absRoot = path.resolve(workspaceRoot);
+    const gitDir = path.join(absRoot, '.git');
+    if (!fs.existsSync(gitDir)) {
+      return {
+        isRepo: false,
+        branch: '',
+        changes: [],
+        clean: true,
+        error: 'Not a git repository',
+      };
+    }
+
+    try {
+      const res = await this.runCommand(absRoot, 'git status --porcelain=v1 -b');
+      if (res.exitCode !== 0) {
+        return {
+          isRepo: true,
+          branch: '',
+          changes: [],
+          clean: true,
+          error: res.stderr.trim() || 'git status failed',
+        };
+      }
+
+      const lines = res.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      let branch = 'main';
+
+      if (lines.length > 0 && lines[0].startsWith('##')) {
+        const header = lines[0].slice(2).trim();
+        // Format e.g. "main...origin/main [ahead 1]" or "No commits yet on main" or "HEAD (no branch)"
+        const match = header.match(/^([^\s.]+)/);
+        if (match) {
+          branch = match[1];
+        } else if (header.includes('No commits yet on')) {
+          branch = header.replace('No commits yet on', '').trim();
+        }
+      }
+
+      const changes: GitFileChange[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.length < 3) continue;
+
+        const statusCode = line.slice(0, 2);
+        const rawPath = line.slice(3).trim();
+        // Handle renamed: "old.txt -> new.txt"
+        const filePath = rawPath.includes(' -> ') ? rawPath.split(' -> ')[1] : rawPath;
+
+        let status: GitFileStatus = 'modified';
+        let staged = false;
+
+        if (statusCode === '??') {
+          status = 'untracked';
+          staged = false;
+        } else if (statusCode[0] === 'A' || statusCode[1] === 'A') {
+          status = 'added';
+          staged = statusCode[0] === 'A';
+        } else if (statusCode[0] === 'D' || statusCode[1] === 'D') {
+          status = 'deleted';
+          staged = statusCode[0] === 'D';
+        } else if (statusCode[0] === 'R' || statusCode[1] === 'R') {
+          status = 'renamed';
+          staged = true;
+        } else if (statusCode[0] === 'C' || statusCode[1] === 'C') {
+          status = 'copied';
+          staged = true;
+        } else {
+          status = 'modified';
+          staged = statusCode[0] !== ' ' && statusCode[0] !== '?';
+        }
+
+        changes.push({
+          path: filePath,
+          status,
+          staged,
+          statusCode,
+        });
+      }
+
+      return {
+        isRepo: true,
+        branch,
+        changes,
+        clean: changes.length === 0,
+      };
+    } catch (err: any) {
+      return {
+        isRepo: true,
+        branch: '',
+        changes: [],
+        clean: true,
+        error: err.message,
+      };
+    }
+  }
+
+  /**
+   * Retrieves recent commit history.
+   */
+  public static async getGitLog(workspaceRoot: string, limit = 15): Promise<GitCommitItem[]> {
+    const absRoot = path.resolve(workspaceRoot);
+    const gitDir = path.join(absRoot, '.git');
+    if (!fs.existsSync(gitDir)) {
+      return [];
+    }
+
+    try {
+      const res = await this.runCommand(absRoot, `git log -n ${limit} --pretty=format:"%h|%an|%ad|%s" --date=short`);
+      if (res.exitCode !== 0 || !res.stdout.trim()) {
+        return [];
+      }
+
+      const commits: GitCommitItem[] = [];
+      const lines = res.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
+
+      for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length >= 4) {
+          const hash = parts[0].trim();
+          const author = parts[1].trim();
+          const date = parts[2].trim();
+          const message = parts.slice(3).join('|').trim();
+
+          const lowerAuthor = author.toLowerCase();
+          const lowerMsg = message.toLowerCase();
+          const isAgent =
+            lowerAuthor.includes('agent') ||
+            lowerAuthor.includes('assistant') ||
+            lowerAuthor.includes('ai') ||
+            lowerAuthor.includes('bot') ||
+            lowerMsg.includes('[agent]') ||
+            lowerMsg.includes('agent:');
+
+          commits.push({
+            hash,
+            author,
+            date,
+            message,
+            isAgent,
+          });
+        }
+      }
+
+      return commits;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves git diff for a specific file or the entire working tree.
+   */
+  public static async getGitDiff(workspaceRoot: string, filePath?: string): Promise<string> {
+    const absRoot = path.resolve(workspaceRoot);
+    const gitDir = path.join(absRoot, '.git');
+    if (!fs.existsSync(gitDir)) {
+      return '';
+    }
+
+    try {
+      let cmd = 'git diff HEAD';
+      if (filePath) {
+        const safe = this.resolveSafePath(absRoot, filePath);
+        const rel = this.getRelativePath(absRoot, safe);
+        cmd = `git diff HEAD -- "${rel}"`;
+      }
+
+      let res = await this.runCommand(absRoot, cmd);
+      if (res.exitCode !== 0 || !res.stdout.trim()) {
+        // Fallback without HEAD (in case there are no commits yet)
+        const fallbackCmd = filePath
+          ? `git diff -- "${this.getRelativePath(absRoot, this.resolveSafePath(absRoot, filePath))}"`
+          : 'git diff';
+        res = await this.runCommand(absRoot, fallbackCmd);
+      }
+
+      return res.stdout || '';
+    } catch {
+      return '';
+    }
+  }
 }
+

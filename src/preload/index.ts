@@ -10,6 +10,8 @@ import {
   MessageAttachment,
   WorkspaceTreeNode,
   WorkspaceFilePreview,
+  GitStatusResult,
+  GitCommitItem,
 } from '../shared/types';
 import { SendMessageOptions } from '../main/engine/chat-engine';
 import { IPC_CHANNELS } from '../main/ipc/channels';
@@ -60,6 +62,10 @@ export interface ElectronAPI {
   getWorkspaceTree: (workspacePath: string) => Promise<{ tree: WorkspaceTreeNode; summary: string; totalFiles: number; totalDirs: number } | null>;
   readWorkspaceFile: (workspacePath: string, relativePath: string) => Promise<WorkspaceFilePreview | null>;
   openWorkspaceInExplorer: (workspacePath: string) => Promise<{ success: boolean; error?: string }>;
+  gitGetStatus: (workspacePath: string) => Promise<GitStatusResult>;
+  gitGetLog: (workspacePath: string, limit?: number) => Promise<GitCommitItem[]>;
+  gitGetDiff: (workspacePath: string, filePath?: string) => Promise<string>;
+  gitInitRepo: (workspacePath: string) => Promise<{ isRepo: boolean; initialized: boolean; message: string }>;
 
   // Settings & Diagnostics
   getSettings: () => Promise<AppSettings>;
@@ -116,6 +122,10 @@ const api: ElectronAPI = {
   getWorkspaceTree: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GET_TREE, wp),
   readWorkspaceFile: (wp, rp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_READ_FILE, wp, rp),
   openWorkspaceInExplorer: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_OPEN_EXPLORER, wp),
+  gitGetStatus: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_STATUS, wp),
+  gitGetLog: (wp, limit) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_LOG, wp, limit),
+  gitGetDiff: (wp, fp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_DIFF, wp, fp),
+  gitInitRepo: (wp) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_GIT_INIT, wp),
 
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
   saveSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SAVE, settings),

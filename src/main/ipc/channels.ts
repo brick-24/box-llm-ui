@@ -52,6 +52,10 @@ export const IPC_CHANNELS = {
   WORKSPACE_GET_TREE: 'workspace:get-tree',
   WORKSPACE_READ_FILE: 'workspace:read-file',
   WORKSPACE_OPEN_EXPLORER: 'workspace:open-explorer',
+  WORKSPACE_GIT_STATUS: 'workspace:git-status',
+  WORKSPACE_GIT_LOG: 'workspace:git-log',
+  WORKSPACE_GIT_DIFF: 'workspace:git-diff',
+  WORKSPACE_GIT_INIT: 'workspace:git-init',
 
   // Browser & Web Surfing
   BROWSER_VIEW_PAGE: 'browser:view-page',

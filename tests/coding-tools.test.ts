@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CODING_TOOLS,
   buildCodingSystemPrompt,
+  getSystemEnvironmentInfo,
 } from '../src/main/engine/tools/coding-tool-definitions';
 
 describe('Coding Tool Definitions & System Prompt Builder', () => {
@@ -24,7 +25,7 @@ describe('Coding Tool Definitions & System Prompt Builder', () => {
     }
   });
 
-  it('builds coding system prompt instructing the agent on workspace constraints', () => {
+  it('builds coding system prompt instructing the agent on workspace constraints and environment', () => {
     const prompt = buildCodingSystemPrompt('/test/my-project', 'You are a helpful coding assistant.');
     expect(prompt).toContain('/test/my-project');
     expect(prompt).toContain('autonomous software engineering agent');
@@ -32,5 +33,23 @@ describe('Coding Tool Definitions & System Prompt Builder', () => {
     expect(prompt).toContain('replace_file_content');
     expect(prompt).toContain('run_command');
     expect(prompt).toContain('You are a helpful coding assistant.');
+    expect(prompt).toContain('<system_environment>');
+    expect(prompt).toContain('<terminal_execution_rules>');
+    expect(prompt).toContain('Terminal Shell:');
+  });
+
+  it('detects host OS and shell execution syntax rules', () => {
+    const env = getSystemEnvironmentInfo();
+    expect(env.osName).toBeDefined();
+    expect(env.platform).toBe(process.platform);
+    expect(env.arch).toBe(process.arch);
+    expect(env.shell).toBeDefined();
+    expect(env.rules.length).toBeGreaterThan(0);
+
+    if (process.platform === 'win32') {
+      expect(env.shell).toBe('powershell.exe');
+      expect(env.rules.some((r: string) => r.includes('&&'))).toBe(true);
+    }
   });
 });
+

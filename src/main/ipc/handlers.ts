@@ -445,14 +445,22 @@ export function registerIpcHandlers(
       return null;
     }
 
-    return res.filePaths[0];
+    const selectedPath = res.filePaths[0];
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      await WorkspaceTools.ensureGitRepo(selectedPath);
+    } catch (err) {
+      console.warn('[Handlers] Git auto-init non-fatal warning:', err);
+    }
+
+    return selectedPath;
   });
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_TREE, async (_event, workspacePath: string) => {
     if (!workspacePath || typeof workspacePath !== 'string') return null;
     try {
       const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
-      return WorkspaceTools.listDir(workspacePath, undefined, 4);
+      return WorkspaceTools.listDir(workspacePath, undefined, 15);
     } catch (err: any) {
       console.error('[Handlers] Failed to get workspace tree:', err);
       return null;
@@ -488,6 +496,50 @@ export function registerIpcHandlers(
     } catch (err: any) {
       console.error('[Handlers] Failed to open path in explorer:', err);
       return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GIT_STATUS, async (_event, workspacePath: string) => {
+    if (!workspacePath) return { isRepo: false, branch: '', changes: [], clean: true };
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      return await WorkspaceTools.getGitStatus(workspacePath);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to get git status:', err);
+      return { isRepo: false, branch: '', changes: [], clean: true, error: err.message };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GIT_LOG, async (_event, workspacePath: string, limit?: number) => {
+    if (!workspacePath) return [];
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      return await WorkspaceTools.getGitLog(workspacePath, limit || 15);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to get git log:', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GIT_DIFF, async (_event, workspacePath: string, filePath?: string) => {
+    if (!workspacePath) return '';
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      return await WorkspaceTools.getGitDiff(workspacePath, filePath);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to get git diff:', err);
+      return '';
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GIT_INIT, async (_event, workspacePath: string) => {
+    if (!workspacePath) return { isRepo: false, initialized: false, message: 'No workspace path' };
+    try {
+      const { WorkspaceTools } = await import('../engine/tools/workspace-tools');
+      return await WorkspaceTools.ensureGitRepo(workspacePath);
+    } catch (err: any) {
+      console.error('[Handlers] Failed to initialize git repo:', err);
+      return { isRepo: false, initialized: false, message: err.message };
     }
   });
 }

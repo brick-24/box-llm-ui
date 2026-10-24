@@ -9,6 +9,8 @@ import {
   StreamErrorEvent,
   WorkspaceTreeNode,
   WorkspaceFilePreview,
+  GitStatusResult,
+  GitCommitItem,
 } from '@shared/types';
 import { useProviderStore } from './useProviderStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -40,9 +42,15 @@ interface ChatState {
   selectedPreviewFile: WorkspaceFilePreview | null;
   isLoadingTree: boolean;
 
+  // Git State
+  gitStatus: GitStatusResult | null;
+  gitCommits: GitCommitItem[];
+  isLoadingGit: boolean;
+  activeGitDiff: { path?: string; diff: string } | null;
+
   init: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
-  createConversation: (providerId?: string, modelId?: string) => Promise<Conversation | null>;
+  createConversation: (providerId?: string, modelId?: string, workspacePath?: string) => Promise<Conversation | null>;
   updateConversation: (updates: Partial<Conversation> & { id: string }) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   search: (query: string) => Promise<void>;
@@ -51,13 +59,17 @@ interface ChatState {
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
   closeBrowserDrawer: () => void;
 
-  // Workspace Actions
+  // Workspace & Git Actions
   setWorkspacePath: (path: string | null) => Promise<void>;
   selectWorkspaceDialog: () => Promise<void>;
   toggleWorkspaceDrawer: () => void;
   loadWorkspaceTree: () => Promise<void>;
+  loadGitData: () => Promise<void>;
   openFilePreview: (relativePath: string) => Promise<void>;
   closeFilePreview: () => void;
+  openGitDiff: (filePath?: string) => Promise<void>;
+  closeGitDiff: () => void;
+  initGitRepo: () => Promise<void>;
   openWorkspaceInExplorer: () => Promise<void>;
 
   sendMessage: (content: string) => Promise<void>;
@@ -97,6 +109,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   workspaceTree: null,
   selectedPreviewFile: null,
   isLoadingTree: false,
+  gitStatus: null,
+  gitCommits: [],
+  isLoadingGit: false,
+  activeGitDiff: null,
 
   init: async () => {
     if (!window.electronAPI) return;
@@ -418,8 +434,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (wp) {
       get().loadWorkspaceTree();
+      get().loadGitData();
     } else {
-      set({ workspaceTree: null });
+      set({ workspaceTree: null, gitStatus: null, gitCommits: [] });
     }
 
     if (conv?.providerId) {
@@ -427,7 +444,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  createConversation: async (providerId, modelId) => {
+  createConversation: async (providerId, modelId, workspacePath) => {
     if (!window.electronAPI) return null;
     const provStore = useProviderStore.getState();
     const activeProv = provStore.activeProvider || provStore.providers[0];
@@ -435,6 +452,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const pId = providerId || activeProv?.id || '';
     const mId = modelId || activeProv?.defaultModel || provStore.models[0]?.id || 'default';
     const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
+    const targetWorkspace = workspacePath !== undefined ? workspacePath : (get().workspacePath || undefined);
 
     const newConv: Conversation = {
       id: crypto.randomUUID(),
@@ -442,13 +460,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       providerId: pId,
       modelId: mId,
       webBrowsingEnabled: defaultWeb,
+      workspacePath: targetWorkspace,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     const created = await window.electronAPI.createConversation(newConv);
     const updated = await window.electronAPI.getConversations();
-    set({ conversations: updated, isWebBrowsing: defaultWeb });
+    set({ conversations: updated, isWebBrowsing: defaultWeb, workspacePath: targetWorkspace || null });
     await get().selectConversation(created.id);
     return created;
   },
@@ -496,8 +515,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     if (path) {
       await get().loadWorkspaceTree();
+      await get().loadGitData();
     } else {
-      set({ workspaceTree: null, selectedPreviewFile: null });
+      set({ workspaceTree: null, selectedPreviewFile: null, gitStatus: null, gitCommits: [] });
     }
   },
 
@@ -525,6 +545,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ workspaceTree: data, isLoadingTree: false });
     } catch {
       set({ workspaceTree: null, isLoadingTree: false });
+    }
+    // Also refresh git status alongside tree
+    get().loadGitData();
+  },
+
+  loadGitData: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) {
+      set({ gitStatus: null, gitCommits: [], isLoadingGit: false });
+      return;
+    }
+    set({ isLoadingGit: true });
+    try {
+      const [status, commits] = await Promise.all([
+        window.electronAPI.gitGetStatus(workspacePath),
+        window.electronAPI.gitGetLog(workspacePath, 20),
+      ]);
+      set({ gitStatus: status, gitCommits: commits || [], isLoadingGit: false });
+    } catch (err) {
+      console.error('Failed to load git data:', err);
+      set({ isLoadingGit: false });
+    }
+  },
+
+  openGitDiff: async (filePath?: string) => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) return;
+    try {
+      const diff = await window.electronAPI.gitGetDiff(workspacePath, filePath);
+      set({ activeGitDiff: { path: filePath, diff } });
+    } catch (err) {
+      console.error('Failed to get diff:', err);
+    }
+  },
+
+  closeGitDiff: () => {
+    set({ activeGitDiff: null });
+  },
+
+  initGitRepo: async () => {
+    const { workspacePath } = get();
+    if (!workspacePath || !window.electronAPI) return;
+    try {
+      await window.electronAPI.gitInitRepo(workspacePath);
+      await get().loadGitData();
+    } catch (err) {
+      console.error('Failed to init git repo:', err);
     }
   },
 

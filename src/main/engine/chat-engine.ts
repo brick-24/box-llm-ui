@@ -14,6 +14,9 @@ import {
 } from '../../shared/types';
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
 import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
+import { WorkspaceTools } from './tools/workspace-tools';
+import { WorkspaceProcessManager } from './tools/process-manager';
+import { CODING_TOOLS, buildCodingSystemPrompt, buildGeneralSystemPrompt } from './tools/coding-tool-definitions';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
   if (!text) return false;
@@ -37,6 +40,7 @@ export interface SendMessageOptions {
   parentId?: string | null;
   isRegeneration?: boolean;
   webBrowsing?: boolean;
+  workspacePath?: string;
 }
 
 export class ChatEngine {
@@ -251,6 +255,20 @@ export class ChatEngine {
       ? options.webBrowsing
       : Boolean(conv.webBrowsingEnabled);
 
+    const effectiveWorkspacePath = options.workspacePath || conv.workspacePath;
+    const hasWorkspace = Boolean(effectiveWorkspacePath && effectiveWorkspacePath.trim());
+
+    const activeTools = [
+      ...(hasWorkspace ? CODING_TOOLS : []),
+      ...(isWebBrowsing ? WEB_TOOLS : []),
+    ];
+    const hasActiveTools = activeTools.length > 0;
+
+    const baseSystemPrompt = options.systemPrompt || conv.systemPrompt;
+    const effectiveSystemPrompt = hasWorkspace
+      ? buildCodingSystemPrompt(effectiveWorkspacePath!, baseSystemPrompt)
+      : buildGeneralSystemPrompt(baseSystemPrompt);
+
     const executedToolCalls: ToolCallItem[] = [];
     const accumulatedCitations: WebCitation[] = [];
     const settings = this.db.getSettings();
@@ -269,16 +287,19 @@ export class ChatEngine {
       if (controller.signal.aborted) break;
 
       const trajectory: ChatMessage[] = [...history];
-      const maxWebTurns = isWebBrowsing ? 6 : 1;
-      let webTurn = 0;
+      const maxTurns = hasWorkspace
+        ? (settings.maxAgentTurns || 20)
+        : (isWebBrowsing ? 6 : 1);
+      let turnIndex = 0;
 
-      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing})`, {
+      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing}, workspace: ${hasWorkspace})`, {
         endpoint: config.chatEndpoint,
         protocol: config.protocol,
         model: currentModel,
         messageCount: trajectory.length,
         streaming: config.streamingEnabled,
         webBrowsing: isWebBrowsing,
+        workspace: effectiveWorkspacePath,
         messagesPreview: trajectory.slice(-3).map((m) => ({
           role: m.role,
           content: m.content.length > 300 ? `${m.content.slice(0, 300)}...` : m.content,
@@ -286,8 +307,8 @@ export class ChatEngine {
       });
 
       try {
-        while (webTurn < maxWebTurns && !controller.signal.aborted) {
-          webTurn++;
+        while (turnIndex < maxTurns && !controller.signal.aborted) {
+          turnIndex++;
           let turnToolCalls: any[] | undefined;
           let turnFullText = '';
           let turnUsage: TokenUsage | undefined;
@@ -301,11 +322,11 @@ export class ChatEngine {
               {
                 messages: trajectory,
                 model: currentModel,
-                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                systemPrompt: effectiveSystemPrompt,
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               {
                 onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
@@ -341,11 +362,11 @@ export class ChatEngine {
               {
                 messages: trajectory,
                 model: currentModel,
-                systemPrompt: options.systemPrompt || conv.systemPrompt,
+                systemPrompt: effectiveSystemPrompt,
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               controller.signal
             );
@@ -371,7 +392,7 @@ export class ChatEngine {
           if (controller.signal.aborted) break;
 
           // Check if tools were requested
-          if (isWebBrowsing && turnToolCalls && turnToolCalls.length > 0 && webTurn < maxWebTurns) {
+          if (hasActiveTools && turnToolCalls && turnToolCalls.length > 0 && turnIndex < maxTurns) {
             const currentTurnItems: ToolCallItem[] = [];
 
             for (const tc of turnToolCalls) {
@@ -387,6 +408,8 @@ export class ChatEngine {
                 name: tc.name,
                 input: parsedInput,
                 status: 'running',
+                thoughtSignature: tc.thoughtSignature,
+                extraContent: tc.extraContent,
               };
               currentTurnItems.push(item);
               executedToolCalls.push(item);
@@ -399,16 +422,223 @@ export class ChatEngine {
                 });
               }
 
+              // Normalize tool name (handles cases like default_api:list_dir or tools:run_command)
+              const normalizedName = item.name.replace(/^(default_api|tools):/, '');
+
               // Execute tool
               const toolStart = Date.now();
               try {
-                const output = await executeWebTool(item.name, item.input, settings);
-                item.durationMs = Date.now() - toolStart;
-                item.output = output.result;
-                item.status = 'completed';
-                if (output.citations) {
-                  accumulatedCitations.push(...output.citations);
+                if (
+                  [
+                    'write_to_file',
+                    'view_file',
+                    'replace_file_content',
+                    'list_dir',
+                    'run_command',
+                    'grep_search',
+                  ].includes(normalizedName)
+                ) {
+                  if (!effectiveWorkspacePath) {
+                    throw new Error(
+                      `Workspace tool "${item.name}" invoked but no workspace folder is set for this conversation.`
+                    );
+                  }
+
+                  switch (normalizedName) {
+                    case 'write_to_file': {
+                      const res = WorkspaceTools.writeToFile(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.content || '',
+                        item.input?.overwrite !== false
+                      );
+                      item.output = {
+                        success: true,
+                        filePath: res.filePath,
+                        bytesWritten: res.bytesWritten,
+                        isNew: res.isNew,
+                      };
+                      break;
+                    }
+                    case 'view_file': {
+                      const res = WorkspaceTools.viewFile(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.startLine,
+                        item.input?.endLine
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'replace_file_content': {
+                      const res = WorkspaceTools.replaceFileContent(
+                        effectiveWorkspacePath,
+                        item.input?.filePath || '',
+                        item.input?.targetContent || '',
+                        item.input?.replacementContent || ''
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'list_dir': {
+                      const res = WorkspaceTools.listDir(
+                        effectiveWorkspacePath,
+                        item.input?.dirPath || '',
+                        item.input?.maxDepth || 3
+                      );
+                      item.output = {
+                        summary: res.summary,
+                        totalFiles: res.totalFiles,
+                        totalDirs: res.totalDirs,
+                      };
+                      break;
+                    }
+                    case 'run_command': {
+                      if (item.input?.isDaemon) {
+                        const procMgr = WorkspaceProcessManager.getInstance();
+                        const procItem = await procMgr.startProcess({
+                          workspacePath: effectiveWorkspacePath,
+                          command: item.input?.command || '',
+                          name: item.input?.command ? item.input.command.split(' ')[0] : 'background-process',
+                          waitMsBeforeAsync: item.input?.waitMsBeforeAsync || 2000,
+                        });
+                        item.output = {
+                          isDaemon: true,
+                          processId: procItem.id,
+                          pid: procItem.pid,
+                          status: procItem.status,
+                          message: `Process started in background (ID: ${procItem.id}, PID: ${procItem.pid}). Real-time logs are streaming to the workspace process manager. You can manage this process using manage_process.`,
+                          initialLogs: procItem.logs.slice(-20),
+                        };
+                        break;
+                      }
+
+                      let streamingAcc = '';
+                      const timeoutMs =
+                        item.input?.timeoutMs ||
+                        (settings.commandTimeoutSec ? settings.commandTimeoutSec * 1000 : 60000);
+                      const res = await WorkspaceTools.runCommand(
+                        effectiveWorkspacePath,
+                        item.input?.command || '',
+                        {
+                          timeoutMs,
+                          signal: controller.signal,
+                          onChunk: (chunk) => {
+                            streamingAcc += chunk;
+                            item.streamingOutput = streamingAcc;
+                            if (win) {
+                              win.webContents.send('chat:tool-command-output', {
+                                conversationId,
+                                messageId: assistantMsgId,
+                                toolCallId: item.id,
+                                chunk,
+                                totalOutput: streamingAcc,
+                              });
+                            }
+                          },
+                        }
+                      );
+                      item.output = res;
+                      break;
+                    }
+                    case 'manage_process': {
+                      const procMgr = WorkspaceProcessManager.getInstance();
+                      const action = item.input?.action;
+                      const procId = item.input?.processId;
+
+                      if (action === 'list') {
+                        const list = procMgr.listProcesses(effectiveWorkspacePath);
+                        item.output = {
+                          total: list.length,
+                          processes: list.map((p) => ({
+                            id: p.id,
+                            name: p.name,
+                            command: p.command,
+                            status: p.status,
+                            pid: p.pid,
+                            startedAt: p.startedAt,
+                            exitCode: p.exitCode,
+                          })),
+                        };
+                      } else if (action === 'status') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for status action.' };
+                        } else {
+                          const p = procMgr.getProcess(procId);
+                          if (!p) {
+                            item.output = { error: `Process ${procId} not found.` };
+                          } else {
+                            item.output = {
+                              id: p.id,
+                              name: p.name,
+                              command: p.command,
+                              status: p.status,
+                              pid: p.pid,
+                              startedAt: p.startedAt,
+                              exitCode: p.exitCode,
+                              lastLogs: p.logs.slice(-10),
+                            };
+                          }
+                        }
+                      } else if (action === 'logs') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for logs action.' };
+                        } else {
+                          const linesCount = item.input?.lines || 50;
+                          const logs = procMgr.getProcessLogs(procId, linesCount);
+                          item.output = { processId: procId, logsCount: logs.length, logs };
+                        }
+                      } else if (action === 'send_input') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for send_input action.' };
+                        } else {
+                          const ok = procMgr.sendInput(procId, item.input?.input || '');
+                          item.output = {
+                            success: ok,
+                            message: ok
+                              ? `Sent input to process ${procId}`
+                              : `Failed to write input to process ${procId}`,
+                          };
+                        }
+                      } else if (action === 'kill') {
+                        if (!procId) {
+                          item.output = { error: 'processId is required for kill action.' };
+                        } else {
+                          const ok = await procMgr.killProcess(procId);
+                          item.output = {
+                            success: ok,
+                            message: ok
+                              ? `Terminated process tree for ${procId}`
+                              : `Failed to terminate process ${procId}`,
+                          };
+                        }
+                      } else {
+                        item.output = { error: `Unknown action: ${action}` };
+                      }
+                      break;
+                    }
+                    case 'grep_search': {
+                      const res = WorkspaceTools.grepSearch(
+                        effectiveWorkspacePath,
+                        item.input?.query || '',
+                        Boolean(item.input?.isRegex),
+                        item.input?.includesPattern
+                      );
+                      item.output = res;
+                      break;
+                    }
+                  }
+                } else {
+                  // Web tools
+                  const output = await executeWebTool(normalizedName, item.input, settings);
+                  item.output = output.result;
+                  if (output.citations) {
+                    accumulatedCitations.push(...output.citations);
+                  }
                 }
+
+                item.durationMs = Date.now() - toolStart;
+                item.status = 'completed';
               } catch (err: any) {
                 item.durationMs = Date.now() - toolStart;
                 item.status = 'error';
@@ -426,12 +656,17 @@ export class ChatEngine {
             }
 
             // Append assistant tool_calls message and tool responses to trajectory
+            const turnSignature = currentTurnItems.find((it) => it.thoughtSignature)?.thoughtSignature;
+            const turnExtra = currentTurnItems.find((it) => it.extraContent)?.extraContent;
+
             trajectory.push({
               id: crypto.randomUUID(),
               conversationId,
               role: 'assistant',
               content: turnFullText,
               toolCalls: currentTurnItems,
+              thoughtSignature: turnSignature,
+              extraContent: turnExtra,
               status: 'completed',
               createdAt: Date.now(),
               updatedAt: Date.now(),
@@ -442,6 +677,7 @@ export class ChatEngine {
                 id: crypto.randomUUID(),
                 conversationId,
                 role: 'tool',
+                name: item.name,
                 toolCallId: item.id,
                 content: typeof item.output === 'string' ? item.output : JSON.stringify(item.output),
                 status: 'completed',

@@ -131,27 +131,84 @@ export function formatMessagesWithAttachments(
 
   for (const msg of messages) {
     if (msg.role === 'tool') {
-      formatted.push({
+      const toolPayload: any = {
         role: 'tool',
         tool_call_id: msg.toolCallId || msg.id,
         content: msg.content,
-      });
+      };
+      const toolName =
+        (msg as any).name ||
+        messages
+          .flatMap((m) => m.toolCalls || [])
+          .find((tc) => tc.id === (msg.toolCallId || msg.id))?.name;
+      if (toolName) {
+        toolPayload.name = toolName;
+      }
+      formatted.push(toolPayload);
       continue;
     }
 
     if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-      formatted.push({
+      const assistantMsg: any = {
         role: 'assistant',
         content: msg.content || null,
-        tool_calls: msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tc.name,
-            arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
-          },
-        })),
-      });
+        tool_calls: msg.toolCalls.map((tc) => {
+          const sig = tc.thoughtSignature || msg.thoughtSignature || 'skip_thought_signature_validator';
+          const extra = tc.extraContent || msg.extraContent || {};
+          const googleExtra = extra.google || {};
+          const vertexExtra = extra.vertex || {};
+
+          return {
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+              thought_signature: sig,
+              thoughtSignature: sig,
+            },
+            thought_signature: sig,
+            thoughtSignature: sig,
+            extra_content: {
+              ...extra,
+              google: {
+                ...googleExtra,
+                thought_signature: sig,
+                thoughtSignature: sig,
+              },
+              vertex: {
+                ...vertexExtra,
+                thought_signature: sig,
+                thoughtSignature: sig,
+              },
+            },
+          };
+        }),
+      };
+
+      const messageSig =
+        msg.thoughtSignature || msg.toolCalls[0]?.thoughtSignature || 'skip_thought_signature_validator';
+      const msgExtra = msg.extraContent || {};
+      const msgGoogleExtra = msgExtra.google || {};
+      const msgVertexExtra = msgExtra.vertex || {};
+
+      assistantMsg.thought_signature = messageSig;
+      assistantMsg.thoughtSignature = messageSig;
+      assistantMsg.extra_content = {
+        ...msgExtra,
+        google: {
+          ...msgGoogleExtra,
+          thought_signature: messageSig,
+          thoughtSignature: messageSig,
+        },
+        vertex: {
+          ...msgVertexExtra,
+          thought_signature: messageSig,
+          thoughtSignature: messageSig,
+        },
+      };
+
+      formatted.push(assistantMsg);
       continue;
     }
 

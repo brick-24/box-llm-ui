@@ -8,6 +8,8 @@ import {
   FileSearch,
   Wrench,
   FileSignature,
+  FolderOpen,
+  Folder,
 } from 'lucide-react';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -20,7 +22,12 @@ interface WelcomeScreenProps {
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectPrompt }) => {
   const { activeProvider } = useProviderStore();
-  const { activeConversation } = useChatStore();
+  const {
+    activeConversation,
+    workspacePath,
+    toggleWorkspaceDrawer,
+    selectWorkspaceDialog,
+  } = useChatStore();
   const { openSettings } = useSettingsStore();
 
   const isConfigured = activeProvider?.isConfigured;
@@ -59,13 +66,39 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onSelectPrompt }) 
         Upload documents, stream markdown with LaTeX, and query OpenAI-compatible or custom AI models with complete privacy and local storage.
       </p>
 
-      {/* Current Model Status Pill */}
-      <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-secondary/50 border border-border text-xs text-foreground mb-8 shadow-sm">
-        <span className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-        <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
-        <span className="font-semibold font-mono text-[11px]">{currentModel}</span>
-        {activeProvider && (
-          <span className="text-muted-foreground font-mono text-[11px]">({activeProvider.name})</span>
+      {/* Status Pills: Model + Workspace */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-8">
+        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-secondary/50 border border-border text-xs text-foreground shadow-sm">
+          <span className={`w-1.5 h-1.5 rounded-full ${isConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="font-semibold font-mono text-[11px]">{currentModel}</span>
+          {activeProvider && (
+            <span className="text-muted-foreground font-mono text-[11px]">({activeProvider.name})</span>
+          )}
+        </div>
+
+        {workspacePath ? (
+          <button
+            type="button"
+            onClick={toggleWorkspaceDrawer}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-secondary/50 hover:bg-secondary border border-border text-xs text-foreground shadow-sm transition-colors cursor-pointer"
+            title="Inspect Workspace File Tree"
+          >
+            <Folder className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-mono text-[11px] font-medium max-w-[140px] truncate">
+              {workspacePath.split(/[/\\]/).pop() || workspacePath}
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={selectWorkspaceDialog}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-secondary/30 hover:bg-secondary border border-dashed border-border hover:border-border text-xs text-muted-foreground hover:text-foreground shadow-sm transition-all cursor-pointer"
+            title="Open a project directory to enable agentic coding tools"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-amber-400/80" />
+            <span className="text-[11px]">Open Workspace</span>
+          </button>
         )}
       </div>
 

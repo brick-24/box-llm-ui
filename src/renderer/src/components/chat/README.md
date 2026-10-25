@@ -46,12 +46,17 @@ This directory contains the core conversational interface components, from the p
 ---
 
 ### 4. [`ToolCallCard.tsx`](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/chat/ToolCallCard.tsx)
-- **Role**: Real-Time Autonomous Tool Execution Card.
+- **Role**: Real-Time Autonomous Tool Execution Card & Live Terminal.
 - **Key Features**:
-  - Displays tool state badges: `Running` (animated spinner), `Completed` (checkmark), or `Failed`.
-  - Shows execution elapsed time (e.g., `420ms`).
-  - Query badge displaying the exact search phrase or target URL.
-  - Action trigger: 1-click "Inspect in Browser" button that opens the slide-over browser drawer.
+  - **Tool State Badges**: `Running` (animated spinner), `Completed` (checkmark), or `Failed`.
+  - **Live Command Terminal (`run_command`)**: Real-time monospace terminal container rendering live stdout/stderr chunks streamed from the main process over IPC (`chat:tool-command-output`). Displays execution exit codes (`exit 0` vs error codes).
+  - **Workspace Coding Tools**:
+    - `write_to_file`: File path tag, bytes written badge, preview snippet, and 1-click "View File" action button.
+    - `replace_file_content`: Surgical string-replacement diff visualization and "View File" shortcut.
+    - `view_file`: File line slice indicator and inspect button.
+    - `list_dir` & `grep_search`: Collapsible entry lists and pattern match locations.
+  - **Web Browsing Tools**: `search_web`, `fetch_web_page`, `browse_page`, and `take_page_screenshot` with 1-click "Inspect in Browser Drawer" button.
+  - Auto-expands running or streaming terminal commands while allowing user collapse/expand.
 
 ---
 

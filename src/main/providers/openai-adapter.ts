@@ -420,6 +420,28 @@ export class OpenAiAdapter implements IProviderAdapter {
         id: tc.id,
         name: tc.function?.name || '',
         arguments: tc.function?.arguments || '',
+        thoughtSignature:
+          tc.thought_signature ||
+          tc.thoughtSignature ||
+          tc.function?.thought_signature ||
+          tc.function?.thoughtSignature ||
+          tc.extra_content?.google?.thought_signature ||
+          tc.extra_content?.google?.thoughtSignature ||
+          tc.extra_content?.vertex?.thought_signature ||
+          tc.extra_content?.thought_signature ||
+          choice.message?.thought_signature ||
+          choice.message?.thoughtSignature ||
+          choice.message?.function?.thought_signature ||
+          choice.message?.function?.thoughtSignature ||
+          choice.message?.extra_content?.google?.thought_signature ||
+          choice.message?.extra_content?.google?.thoughtSignature ||
+          choice.extra_content?.google?.thought_signature ||
+          choice.extra_content?.google?.thoughtSignature ||
+          json.extra_content?.google?.thought_signature ||
+          json.extra_content?.google?.thoughtSignature ||
+          json.thought_signature ||
+          json.thoughtSignature,
+        extraContent: tc.extra_content || choice.message?.extra_content || json.extra_content,
       }));
 
       const finishReason = choice?.finish_reason || 'stop';
@@ -678,6 +700,28 @@ export class OpenAiAdapter implements IProviderAdapter {
       id: tc.id,
       name: tc.function?.name || '',
       arguments: tc.function?.arguments || '',
+      thoughtSignature:
+        tc.thought_signature ||
+        tc.thoughtSignature ||
+        tc.function?.thought_signature ||
+        tc.function?.thoughtSignature ||
+        tc.extra_content?.google?.thought_signature ||
+        tc.extra_content?.google?.thoughtSignature ||
+        tc.extra_content?.vertex?.thought_signature ||
+        tc.extra_content?.thought_signature ||
+        choice?.message?.thought_signature ||
+        choice?.message?.thoughtSignature ||
+        choice?.message?.function?.thought_signature ||
+        choice?.message?.function?.thoughtSignature ||
+        choice?.message?.extra_content?.google?.thought_signature ||
+        choice?.message?.extra_content?.google?.thoughtSignature ||
+        choice?.extra_content?.google?.thought_signature ||
+        choice?.extra_content?.google?.thoughtSignature ||
+        json.extra_content?.google?.thought_signature ||
+        json.extra_content?.google?.thoughtSignature ||
+        json.thought_signature ||
+        json.thoughtSignature,
+      extraContent: tc.extra_content || choice?.message?.extra_content || json.extra_content,
     }));
 
     DiagnosticsService.log('info', 'api', `[API Response Body] Response received (${content.length} chars, reasoning: ${reasoningContent?.length || 0} chars, toolCalls: ${rawToolCalls?.length || 0})`, {

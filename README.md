@@ -49,25 +49,9 @@ An iconic, precision-engineered universal AI desktop client built with **Electro
 - **Interactive Slide-Over Browser Drawer**: Inspect extracted web content in a slide-over panel featuring a distraction-free **Markdown Reader View** and a high-resolution **Chromium Off-Screen Visual Screenshot View**.
 - **Grounding Citation Chips**: Rich source chips backing assistant responses complete with Google-resolved domain favicons.
 
-### 8. Autonomous Agentic Coding Engine & Project Workspace
-- **Open Any Project Folder**: Connect any local workspace folder on your disk directly to a conversation thread.
-- **Autonomous Multi-Turn Coding Loop**: When working in a workspace, models autonomously dispatch coding tools over up to 20 turns (configurable) to inspect, scaffold, edit, and test code.
-- **6 Standard Coding Tools**:
-  - `write_to_file`: Creates new project files and scaffolds parent directories automatically.
-  - `view_file`: Inspects files with line numbers and optional line-range slicing.
-  - `replace_file_content`: Performs surgical block edits without re-generating entire files.
-  - `list_dir`: Explores the directory structure with file sizes and directory counts.
-  - `run_command`: Spawns shell processes (`npm`, `npx`, `git`, `python`, etc.) bound strictly to the workspace root.
-  - `grep_search`: Performs fast regex and substring pattern searches across all project files.
-- **Real-Time Streaming Terminal Output**: Terminal commands stream live stdout and stderr chunks directly to the UI over IPC (`chat:tool-command-output`), rendering into dark monospaced terminal cards with exit-code badges (`exit 0`).
-- **Path Traversal Security Sandbox**: All file accesses are verified by `resolveSafePath`, strictly preventing directory traversal (`../`) or escaping the workspace root.
-- **Interactive Workspace Drawer**: Slide-over panel featuring a recursive file tree with file-type extension icons, file sizes, live search filter, and an "Open in Explorer" shortcut.
-- **Line-Numbered File Preview Modal**: Fullscreen/dialog inspection of any workspace file with line numbers, file metadata, and one-click clipboard copying.
-- **Execution & Safety Policies**: Configurable in **Settings** > **Defaults & Generation** (`auto` autonomous execution, `confirm-destructive`, or `confirm-all`), along with custom command timeouts and agent turn limits.
-
-### 9. Security, Storage & Ergonomics
+### 8. Security, Storage & Ergonomics
 - **Hardware-Backed Credential Security**: API keys are securely encrypted using native OS Keychains via Electron `safeStorage` (Windows DPAPI, macOS Keychain, Linux Secret Service), with automatic AES-256-GCM fallback.
-- **Embedded WebAssembly SQLite**: Thread history, provider credentials, workspace paths, and settings are persisted locally via `sql.js` with safe, non-destructive schema migrations.
+- **Embedded WebAssembly SQLite**: Thread history, provider credentials, and settings are persisted locally via `sql.js` with safe, non-destructive schema migrations.
 - **shadcn/ui Zinc Monochrome Aesthetic**: Precision 1px borders, deep dark mode surfaces (`#09090B`), subtle elevations, and Geist typography.
 - **Rich Markdown & LaTeX**: Full GitHub Flavored Markdown (tables, blockquotes, checklists) and inline/display math formulas rendered with **KaTeX**.
 - **Keyboard-First Workflow**: Global shortcuts, including **`Ctrl + .`** to immediately jump into the composer from anywhere.
@@ -100,8 +84,7 @@ graph TD
         Branching[Message Branch Tree: Sibling Pagination]
         Thinking[Reasoning Accordion + Stopwatch]
         BrowserDrawer[Web Browser Drawer: Reader + Screenshot]
-        WorkspaceDrawer[Workspace Drawer: File Tree + Preview]
-        ToolCards[ToolCallCard: Trajectory + Live Terminal]
+        ToolCards[ToolCallCard Trajectory & Citations]
         DangerZone[Factory Reset & Data Management]
         Zustand[Zustand Stores: useChatStore, useProviderStore, useSettingsStore]
         Bridge[window.electronAPI]
@@ -114,8 +97,6 @@ graph TD
     subgraph Main ["Main Process (Node.js + Electron)"]
         IPC[IPC Handler Registry + Reset Handler]
         Engine[ChatEngine + Multi-Turn ReAct Loop]
-        WorkspaceTools[WorkspaceTools Sandbox & Traversal Guards]
-        Shell[Terminal Shell: PowerShell / Bash]
         BrowserSession[Chromium Session persist:web-agent]
         SearchEng[Search Service: DuckDuckGo / Brave / Tavily / Serper]
         PageFetch[Reader Page Fetcher: HTML to Markdown]
@@ -125,10 +106,9 @@ graph TD
         Keyring[(safeStorage / DPAPI / AES-256-GCM)]
     end
 
-    subgraph External ["External Services & Filesystem"]
+    subgraph External ["External Services"]
         APIs[OpenAI / Gemini / OpenRouter / Ollama / Custom API]
         Web[Live Web: DuckDuckGo / Brave / Tavily / Target URLs]
-        FS[(Local Project Workspace Directory)]
     end
 
     UI --> Zustand
@@ -136,16 +116,12 @@ graph TD
     Branching --> UI
     Thinking --> UI
     BrowserDrawer --> UI
-    WorkspaceDrawer --> UI
     ToolCards --> UI
     DangerZone --> Bridge
     Zustand --> Bridge
     Bridge --> CB
     CB --> IPC
     IPC --> Engine
-    Engine --> WorkspaceTools
-    WorkspaceTools --> FS
-    WorkspaceTools --> Shell
     Engine --> BrowserSession
     Engine --> SearchEng
     Engine --> PageFetch
@@ -168,7 +144,7 @@ Every subsystem in this repository contains dedicated technical documentation:
 | Directory | Documentation Link | Description |
 |---|---|---|
 | **`scripts/`** | [**`scripts/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/scripts/README.md) | Esbuild and Vite build, development, and clean-data automation scripts. |
-| **`tests/`** | [**`tests/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/tests/README.md) | 81-test Vitest suite covering stream parsers, adapters, branching, thinking, artifacts, web search, page reading, tool calling, workspace sandbox tools, and coding definitions. |
+| **`tests/`** | [**`tests/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/tests/README.md) | 70-test Vitest suite covering stream parsers, adapters, branching, thinking, artifacts, web search, page reading, and tool calling. |
 | **`src/`** | [**`src/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/README.md) | High-level architectural overview of the source tree. |
 | **`src/shared/`** | [**`src/shared/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/shared/README.md) | Shared domain contracts, data types, constants, tool schemas, and validation. |
 | **`src/preload/`** | [**`src/preload/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/preload/README.md) | Secure context bridge exposing `window.electronAPI`. |
@@ -176,15 +152,13 @@ Every subsystem in this repository contains dedicated technical documentation:
 | **`src/main/browser/`** | [**`src/main/browser/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/browser/README.md) | Sandboxed Chromium session (`persist:web-agent`), search service (DDG/Brave/Tavily/Serper), page reader, and autonomous tools. |
 | **`src/main/documents/`** | [**`src/main/documents/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/documents/README.md) | Document parsing and token chunking (PDF, DOCX, TXT, MD, images). |
 | **`src/main/engine/`** | [**`src/main/engine/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/engine/README.md) | Chat completion orchestrator, multi-turn ReAct tool loop, branch history resolver, SSE stream parser, and diagnostics. |
-| **`src/main/engine/tools/`** | [**`src/main/engine/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/engine/README.md) | Workspace file operations sandbox (`WorkspaceTools`), path traversal guards, command execution, and coding tool schemas. |
 | **`src/main/ipc/`** | [**`src/main/ipc/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/ipc/README.md) | Inter-process communication channel definitions and handler mappings. |
 | **`src/main/providers/`** | [**`src/main/providers/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/providers/README.md) | Multi-protocol provider adapters with function calling and tool execution support. |
 | **`src/main/storage/`** | [**`src/main/storage/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/main/storage/README.md) | SQLite database management, safe column migrations, factory reset, and OS keychain encryption. |
 | **`src/renderer/`** | [**`src/renderer/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/README.md) | Vite frontend entrypoint and index HTML configuration. |
 | **`src/renderer/src/`** | [**`src/renderer/src/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/README.md) | React 19 root component, design system tokens, and global listeners. |
 | **`src/renderer/src/components/`** | [**`src/renderer/src/components/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/README.md) | UI components domain overview. |
-| **`src/renderer/src/components/chat/`** | [**`src/renderer/src/components/chat/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/chat/README.md) | Message items, live terminal tool cards, citations, slide-over browser drawer, branching buttons, and composer. |
-| **`src/renderer/src/components/workspace/`** | [**`src/renderer/src/components/workspace/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/workspace/README.md) | Workspace drawer, interactive file tree with search filter, and line-numbered file preview modal. |
+| **`src/renderer/src/components/chat/`** | [**`src/renderer/src/components/chat/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/chat/README.md) | Message items, tool cards, citations, slide-over browser drawer, branching buttons, and composer. |
 | **`src/renderer/src/components/layout/`** | [**`src/renderer/src/components/layout/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/layout/README.md) | Window titlebar and conversation navigation sidebar. |
 | **`src/renderer/src/components/settings/`** | [**`src/renderer/src/components/settings/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/components/settings/README.md) | Settings modal with Web Browsing tab, provider forms, diagnostics, and Danger Zone reset. |
 | **`src/renderer/src/store/`** | [**`src/renderer/src/store/README.md`**](file:///c:/Users/raghav/Desktop/spare/box/src/renderer/src/store/README.md) | Zustand state stores (`useChatStore`, `useProviderStore`, `useSettingsStore`). |
@@ -214,7 +188,7 @@ npm run dev
 ```
 
 ### 4. Running Unit Tests
-Runs the complete 81-test Vitest test suite validating stream parsers, adapters, message branching, thinking accordions, live artifacts, web search, page reading, tool calling, SQLite migrations, data resets, workspace sandbox tools, and coding schemas:
+Runs the complete 70-test Vitest test suite validating stream parsers, adapters, message branching, thinking accordions, live artifacts, web search, page reading, tool calling, SQLite migrations, and data resets:
 ```bash
 npm test
 ```
@@ -265,7 +239,7 @@ Or open **Settings** > **Data & Backup** > **Reset to Factory Defaults** directl
 | **Security** | `safeStorage` (Electron) | Hardware-backed DPAPI / Keychain credential encryption |
 | **Markdown & Math** | `react-markdown` + `KaTeX` | LaTeX equations, tables, and syntax-highlighted code |
 | **Sandbox Preview** | Native isolated `<iframe>` | `allow-scripts` without `allow-same-origin` (safe null origin) |
-| **Testing** | [Vitest](https://vitest.dev/) | 81 tests across 16 suites validating full client pipeline |
+| **Testing** | [Vitest](https://vitest.dev/) | 70 tests across 14 suites validating full client pipeline |
 
 ---
 

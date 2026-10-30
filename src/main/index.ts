@@ -5,7 +5,6 @@ import { AppDatabase } from './storage/database';
 import { CredentialManager } from './storage/credentials';
 import { ChatEngine } from './engine/chat-engine';
 import { DiagnosticsService } from './engine/diagnostics';
-import { WorkspaceProcessManager } from './engine/tools/process-manager';
 import { registerIpcHandlers } from './ipc/handlers';
 import { PROVIDER_PRESETS } from '../shared/constants';
 import { ProviderConfig } from '../shared/types';
@@ -239,11 +238,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  try {
-    WorkspaceProcessManager.getInstance().killAll();
-  } catch (err) {
-    console.error('Error terminating background processes on quit:', err);
-  }
   if (db) {
     db.persistImmediately();
   }

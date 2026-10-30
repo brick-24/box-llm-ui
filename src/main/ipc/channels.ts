@@ -45,26 +45,6 @@ export const IPC_CHANNELS = {
   STREAM_END: 'chat:stream-end',
   STREAM_ERROR: 'chat:stream-error',
   TOOL_CALL_UPDATE: 'chat:tool-call-update',
-  TOOL_COMMAND_OUTPUT: 'chat:tool-command-output',
-
-  // Workspace & Coding Engine
-  WORKSPACE_SELECT_DIALOG: 'workspace:select-dialog',
-  WORKSPACE_GET_TREE: 'workspace:get-tree',
-  WORKSPACE_READ_FILE: 'workspace:read-file',
-  WORKSPACE_OPEN_EXPLORER: 'workspace:open-explorer',
-  WORKSPACE_GIT_STATUS: 'workspace:git-status',
-  WORKSPACE_GIT_LOG: 'workspace:git-log',
-  WORKSPACE_GIT_DIFF: 'workspace:git-diff',
-  WORKSPACE_GIT_INIT: 'workspace:git-init',
-
-  // Process & Multi-Terminal Engine
-  WORKSPACE_PROCESS_START: 'workspace:process-start',
-  WORKSPACE_PROCESS_LIST: 'workspace:process-list',
-  WORKSPACE_PROCESS_KILL: 'workspace:process-kill',
-  WORKSPACE_PROCESS_INPUT: 'workspace:process-input',
-  WORKSPACE_PROCESS_LOGS: 'workspace:process-logs',
-  WORKSPACE_PROCESS_OUTPUT_EVENT: 'workspace:process-output',
-  WORKSPACE_PROCESS_EXIT_EVENT: 'workspace:process-exit',
 
   // Browser & Web Surfing
   BROWSER_VIEW_PAGE: 'browser:view-page',

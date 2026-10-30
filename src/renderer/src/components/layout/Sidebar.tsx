@@ -8,15 +8,11 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   MoreVertical,
   Download,
   Edit2,
   Check,
   X,
-  Folder,
-  Layers,
-  FolderOpen,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -40,8 +36,6 @@ export const Sidebar: React.FC = () => {
     updateConversation,
     deleteConversation,
     search,
-    workspacePath,
-    toggleWorkspaceDrawer,
   } = useChatStore();
 
   const { openSettings } = useSettingsStore();
@@ -52,33 +46,6 @@ export const Sidebar: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [selectedWorkspaceFilter, setSelectedWorkspaceFilter] = useState<string>('all');
-  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
-
-  // Distinct workspaces found in conversations + current active workspace
-  const workspaceList = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of conversations) {
-      if (c.workspacePath) {
-        set.add(c.workspacePath);
-      }
-    }
-    if (workspacePath) {
-      set.add(workspacePath);
-    }
-    return Array.from(set);
-  }, [conversations, workspacePath]);
-
-  // Filter conversations by workspace filter
-  const filteredConversations = useMemo(() => {
-    let list = conversations;
-    if (selectedWorkspaceFilter === 'standalone') {
-      list = list.filter((c) => !c.workspacePath);
-    } else if (selectedWorkspaceFilter !== 'all') {
-      list = list.filter((c) => c.workspacePath === selectedWorkspaceFilter);
-    }
-    return list;
-  }, [conversations, selectedWorkspaceFilter]);
 
   const grouped = useMemo<GroupedConversations>(() => {
     const pinned: Conversation[] = [];
@@ -92,7 +59,7 @@ export const Sidebar: React.FC = () => {
     const yesterdayStart = todayStart - 86400000;
     const weekStart = todayStart - 7 * 86400000;
 
-    for (const c of filteredConversations) {
+    for (const c of conversations) {
       if (c.isPinned) {
         pinned.push(c);
       } else if (c.updatedAt >= todayStart) {
@@ -107,20 +74,12 @@ export const Sidebar: React.FC = () => {
     }
 
     return { pinned, today, yesterday, lastWeek, older };
-  }, [filteredConversations]);
+  }, [conversations]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchVal(val);
     search(val);
-  };
-
-  const handleNewChat = () => {
-    if (selectedWorkspaceFilter !== 'all' && selectedWorkspaceFilter !== 'standalone') {
-      createConversation(undefined, undefined, selectedWorkspaceFilter);
-    } else {
-      createConversation();
-    }
   };
 
   const handleStartRename = (conv: Conversation, e: React.MouseEvent) => {
@@ -207,15 +166,7 @@ export const Sidebar: React.FC = () => {
               </button>
             </form>
           ) : (
-            <div className="flex flex-col truncate flex-1 min-w-0">
-              <span className="truncate">{conv.title}</span>
-              {conv.workspacePath && selectedWorkspaceFilter === 'all' && (
-                <span className="text-[10px] text-muted-foreground/75 font-mono truncate flex items-center gap-1 mt-0.5">
-                  <Folder className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                  <span className="truncate">{conv.workspacePath.split(/[/\\]/).pop()}</span>
-                </span>
-              )}
-            </div>
+            <span className="truncate">{conv.title}</span>
           )}
         </div>
 
@@ -302,7 +253,7 @@ export const Sidebar: React.FC = () => {
             <ChevronRight className="w-4 h-4" />
           </button>
           <button
-            onClick={handleNewChat}
+            onClick={() => createConversation()}
             className="p-2.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 shadow-sm transition-all"
             title="New Chat (Ctrl+N)"
             aria-label="New Chat"
@@ -331,16 +282,12 @@ export const Sidebar: React.FC = () => {
       <div className="p-3 pb-2 space-y-2.5">
         <div className="flex items-center justify-between gap-1.5">
           <button
-            onClick={handleNewChat}
+            onClick={() => createConversation()}
             className="flex-1 flex items-center justify-between py-2 px-3 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium shadow-sm transition-all active:scale-[0.98]"
           >
             <div className="flex items-center space-x-2">
               <Plus className="w-3.5 h-3.5" />
-              <span>
-                {selectedWorkspaceFilter !== 'all' && selectedWorkspaceFilter !== 'standalone'
-                  ? 'New Chat in Folder'
-                  : 'New Chat'}
-              </span>
+              <span>New Chat</span>
             </div>
             <kbd className="text-[10px] font-mono bg-primary-foreground/15 text-primary-foreground px-1.5 py-0.5 rounded">
               Ctrl+N
@@ -384,156 +331,7 @@ export const Sidebar: React.FC = () => {
             </span>
           )}
         </div>
-
-        {/* Workspace Dropdown Filter (Apple HIG Desktop Popover) */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setIsWorkspaceDropdownOpen(!isWorkspaceDropdownOpen)}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-secondary/40 hover:bg-secondary/70 border border-border text-xs transition-all font-medium text-foreground group"
-          >
-            <div className="flex items-center space-x-2 truncate">
-              {selectedWorkspaceFilter === 'all' ? (
-                <Layers className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
-              ) : selectedWorkspaceFilter === 'standalone' ? (
-                <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground shrink-0 transition-colors" />
-              ) : (
-                <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              )}
-              <span className="truncate text-xs">
-                {selectedWorkspaceFilter === 'all'
-                  ? 'All Conversations'
-                  : selectedWorkspaceFilter === 'standalone'
-                  ? 'Standalone Chats'
-                  : selectedWorkspaceFilter.split(/[/\\]/).pop() || selectedWorkspaceFilter}
-              </span>
-              <span className="text-[10px] text-muted-foreground font-mono bg-background border border-border px-1.5 py-0.2 rounded">
-                {filteredConversations.length}
-              </span>
-            </div>
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
-                isWorkspaceDropdownOpen ? 'rotate-180' : ''
-              }`}
-            />
-          </button>
-
-          {/* Floating Dropdown Popover */}
-          {isWorkspaceDropdownOpen && (
-            <div className="absolute left-0 right-0 top-9 z-50 bg-popover/95 backdrop-blur-xl border border-border rounded-xl shadow-2xl py-1 animate-in fade-in zoom-in-95 text-xs">
-              <div className="px-2.5 py-1 text-[10px] uppercase font-semibold text-muted-foreground">
-                Filter Conversations
-              </div>
-
-              {/* All option */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedWorkspaceFilter('all');
-                  setIsWorkspaceDropdownOpen(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-accent text-left transition-colors"
-              >
-                <div className="flex items-center space-x-2 truncate">
-                  <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>All Conversations</span>
-                </div>
-                {selectedWorkspaceFilter === 'all' && <Check className="w-3.5 h-3.5 text-primary" />}
-              </button>
-
-              {/* Standalone option */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedWorkspaceFilter('standalone');
-                  setIsWorkspaceDropdownOpen(false);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-accent text-left transition-colors"
-              >
-                <div className="flex items-center space-x-2 truncate">
-                  <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>Standalone Chats</span>
-                </div>
-                {selectedWorkspaceFilter === 'standalone' && <Check className="w-3.5 h-3.5 text-primary" />}
-              </button>
-
-              {/* Workspaces list */}
-              {workspaceList.length > 0 && (
-                <>
-                  <div className="h-px bg-border my-1" />
-                  <div className="px-2.5 py-1 text-[10px] uppercase font-semibold text-muted-foreground">
-                    Workspaces ({workspaceList.length})
-                  </div>
-                  {workspaceList.map((wp) => {
-                    const name = wp.split(/[/\\]/).pop() || wp;
-                    const count = conversations.filter((c) => c.workspacePath === wp).length;
-                    const isSelected = selectedWorkspaceFilter === wp;
-                    return (
-                      <button
-                        key={wp}
-                        type="button"
-                        onClick={() => {
-                          setSelectedWorkspaceFilter(wp);
-                          setIsWorkspaceDropdownOpen(false);
-                        }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-accent text-left transition-colors"
-                      >
-                        <div className="flex items-center space-x-2 truncate min-w-0 pr-1">
-                          <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span className="truncate font-mono">{name}</span>
-                        </div>
-                        <div className="flex items-center space-x-1.5 shrink-0">
-                          <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.2 rounded">
-                            {count}
-                          </span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* Action: New chat in selected workspace */}
-              {selectedWorkspaceFilter !== 'all' && selectedWorkspaceFilter !== 'standalone' && (
-                <>
-                  <div className="h-px bg-border my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      createConversation(undefined, undefined, selectedWorkspaceFilter);
-                      setIsWorkspaceDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center space-x-2 px-2.5 py-1.5 text-primary hover:bg-primary/10 transition-colors font-medium text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>New Chat in this Workspace</span>
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
       </div>
-
-      {/* Active Workspace Pill if filter or store has workspace */}
-      {selectedWorkspaceFilter !== 'all' && selectedWorkspaceFilter !== 'standalone' && (
-        <div className="mx-3 mb-1 px-2.5 py-1 rounded-md bg-secondary/30 border border-border/60 flex items-center justify-between text-[11px]">
-          <div className="flex items-center space-x-1.5 truncate">
-            <FolderOpen className="w-3 h-3 text-amber-400 shrink-0" />
-            <span className="truncate font-mono text-muted-foreground">
-              {selectedWorkspaceFilter.split(/[/\\]/).pop()}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={toggleWorkspaceDrawer}
-            className="text-[10px] text-primary hover:underline shrink-0 font-medium"
-          >
-            Files & Git
-          </button>
-        </div>
-      )}
 
       {/* Conversation List Scroll Area */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
@@ -543,19 +341,10 @@ export const Sidebar: React.FC = () => {
         {grouped.lastWeek.length > 0 && renderSection('Previous 7 Days', grouped.lastWeek)}
         {grouped.older.length > 0 && renderSection('Older', grouped.older)}
 
-        {filteredConversations.length === 0 && (
+        {conversations.length === 0 && (
           <div className="text-center py-12 text-muted-foreground text-xs">
             <MessageSquare className="w-8 h-8 mx-auto mb-2 text-muted-foreground/60 stroke-1" />
-            <p>No conversations found.</p>
-            {selectedWorkspaceFilter !== 'all' && (
-              <button
-                type="button"
-                onClick={() => setSelectedWorkspaceFilter('all')}
-                className="mt-2 text-[11px] text-primary hover:underline"
-              >
-                Clear workspace filter
-              </button>
-            )}
+            <p>No conversations yet.</p>
           </div>
         )}
       </div>

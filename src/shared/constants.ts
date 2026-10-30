@@ -13,9 +13,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultWebBrowsing: false,
   searchProvider: 'duckduckgo',
   maxSearchResults: 5,
-  terminalCommandPolicy: 'auto',
-  commandTimeoutSec: 60,
-  maxAgentTurns: 20,
 };
 
 export const PROVIDER_PRESETS: Partial<ProviderConfig>[] = [

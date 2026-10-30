@@ -104,9 +104,6 @@ export interface ToolCallItem {
   status: ToolCallStatus;
   error?: string;
   durationMs?: number;
-  streamingOutput?: string;
-  thoughtSignature?: string;
-  extraContent?: Record<string, any>;
 }
 
 export interface ChatMessage {
@@ -114,7 +111,6 @@ export interface ChatMessage {
   conversationId: string;
   parentId?: string | null;
   role: MessageRole;
-  name?: string;
   content: string;
   reasoningContent?: string;
   thinkingDurationMs?: number;
@@ -126,8 +122,6 @@ export interface ChatMessage {
   finishReason?: string;
   citations?: WebCitation[];
   toolCalls?: ToolCallItem[];
-  thoughtSignature?: string;
-  extraContent?: Record<string, any>;
   toolCallId?: string;
   createdAt: number;
   updatedAt: number;
@@ -144,77 +138,8 @@ export interface Conversation {
   topP?: number;
   isPinned?: boolean;
   webBrowsingEnabled?: boolean;
-  workspacePath?: string;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface WorkspaceTreeNode {
-  name: string;
-  path: string;
-  isDir: boolean;
-  sizeBytes?: number;
-  children?: WorkspaceTreeNode[];
-}
-
-export interface WorkspaceFilePreview {
-  path: string;
-  content: string;
-  sizeBytes: number;
-  lines: number;
-}
-
-export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed' | 'copied';
-
-export interface GitFileChange {
-  path: string;
-  status: GitFileStatus;
-  staged: boolean;
-  statusCode: string;
-}
-
-export interface GitCommitItem {
-  hash: string;
-  author: string;
-  date: string;
-  message: string;
-  isAgent: boolean;
-}
-
-export interface GitStatusResult {
-  isRepo: boolean;
-  branch: string;
-  changes: GitFileChange[];
-  clean: boolean;
-  error?: string;
-}
-
-export type ProcessStatus = 'running' | 'completed' | 'failed' | 'killed';
-
-export interface WorkspaceProcessItem {
-  id: string;
-  workspaceRoot: string;
-  name: string;
-  command: string;
-  pid?: number;
-  status: ProcessStatus;
-  exitCode: number | null;
-  startedAt: number;
-  stoppedAt?: number;
-  logs: string[];
-  isDaemon: boolean;
-}
-
-export interface ProcessOutputEvent {
-  processId: string;
-  chunk: string;
-  totalLogs: number;
-}
-
-export interface ProcessExitEvent {
-  processId: string;
-  exitCode: number | null;
-  status: ProcessStatus;
 }
 
 export interface AppSettings {
@@ -232,9 +157,6 @@ export interface AppSettings {
   searchProvider: 'duckduckgo' | 'brave' | 'tavily' | 'serper';
   searchApiKey?: string;
   maxSearchResults: number;
-  terminalCommandPolicy: 'auto' | 'confirm';
-  commandTimeoutSec: number;
-  maxAgentTurns: number;
 }
 
 export interface DiagnosticLog {

@@ -7,13 +7,6 @@ import {
   StreamChunkEvent,
   StreamEndEvent,
   StreamErrorEvent,
-  WorkspaceTreeNode,
-  WorkspaceFilePreview,
-  GitStatusResult,
-  GitCommitItem,
-  WorkspaceProcessItem,
-  ProcessOutputEvent,
-  ProcessExitEvent,
 } from '@shared/types';
 import { useProviderStore } from './useProviderStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -38,27 +31,9 @@ interface ChatState {
   activeBrowserDrawerScreenshot: string | null;
   activeBrowserDrawerMarkdown: string | null;
 
-  // Workspace & Coding Engine State
-  workspacePath: string | null;
-  isWorkspaceDrawerOpen: boolean;
-  workspaceTree: { tree: WorkspaceTreeNode; summary: string; totalFiles: number; totalDirs: number } | null;
-  selectedPreviewFile: WorkspaceFilePreview | null;
-  isLoadingTree: boolean;
-
-  // Git State
-  gitStatus: GitStatusResult | null;
-  gitCommits: GitCommitItem[];
-  isLoadingGit: boolean;
-  activeGitDiff: { path?: string; diff: string } | null;
-
-  // Process & Multi-Terminal State
-  processes: WorkspaceProcessItem[];
-  activeProcessId: string | null;
-  isLoadingProcesses: boolean;
-
   init: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
-  createConversation: (providerId?: string, modelId?: string, workspacePath?: string) => Promise<Conversation | null>;
+  createConversation: (providerId?: string, modelId?: string) => Promise<Conversation | null>;
   updateConversation: (updates: Partial<Conversation> & { id: string }) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   search: (query: string) => Promise<void>;
@@ -66,24 +41,6 @@ interface ChatState {
   setWebBrowsing: (enabled: boolean) => void;
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
   closeBrowserDrawer: () => void;
-
-  // Workspace, Process & Git Actions
-  setWorkspacePath: (path: string | null) => Promise<void>;
-  selectWorkspaceDialog: () => Promise<void>;
-  toggleWorkspaceDrawer: () => void;
-  loadWorkspaceTree: () => Promise<void>;
-  loadGitData: () => Promise<void>;
-  loadProcesses: () => Promise<void>;
-  startProcess: (command: string, name?: string) => Promise<WorkspaceProcessItem | null>;
-  killProcess: (processId: string) => Promise<boolean>;
-  sendProcessInput: (processId: string, input: string) => Promise<boolean>;
-  selectProcess: (processId: string | null) => void;
-  openFilePreview: (relativePath: string) => Promise<void>;
-  closeFilePreview: () => void;
-  openGitDiff: (filePath?: string) => Promise<void>;
-  closeGitDiff: () => void;
-  initGitRepo: () => Promise<void>;
-  openWorkspaceInExplorer: () => Promise<void>;
 
   sendMessage: (content: string) => Promise<void>;
   editAndBranchMessage: (targetMessageId: string, newContent: string) => Promise<void>;
@@ -117,18 +74,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeBrowserDrawerTitle: null,
   activeBrowserDrawerScreenshot: null,
   activeBrowserDrawerMarkdown: null,
-  workspacePath: null,
-  isWorkspaceDrawerOpen: false,
-  workspaceTree: null,
-  selectedPreviewFile: null,
-  isLoadingTree: false,
-  gitStatus: null,
-  gitCommits: [],
-  isLoadingGit: false,
-  activeGitDiff: null,
-  processes: [],
-  activeProcessId: null,
-  isLoadingProcesses: false,
 
   init: async () => {
     if (!window.electronAPI) return;
@@ -273,10 +218,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       // Reload conversations to update timestamps
       window.electronAPI.getConversations().then((updated) => set({ conversations: updated }));
-      // Auto-refresh workspace tree if workspace is active
-      if (get().workspacePath) {
-        get().loadWorkspaceTree();
-      }
     });
 
     window.electronAPI.onStreamError((data: StreamErrorEvent) => {
@@ -375,88 +316,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
     });
-
-    window.electronAPI.onToolCommandOutput?.((data: any) => {
-      const { conversationId, messageId, toolCallId, totalOutput } = data;
-      if (conversationId === get().activeConversationId) {
-        set((state) => {
-          let nextAll: ChatMessage[];
-          const hasTarget = state.allMessages.some((m) => m.id === messageId);
-
-          const updateOutput = (existingCalls?: any[]) => {
-            if (!existingCalls) return [];
-            return existingCalls.map((c) =>
-              c.id === toolCallId ? { ...c, streamingOutput: totalOutput } : c
-            );
-          };
-
-          if (hasTarget) {
-            nextAll = state.allMessages.map((m) =>
-              m.id === messageId ? { ...m, toolCalls: updateOutput(m.toolCalls) } : m
-            );
-          } else {
-            const lastIdx = state.allMessages.findLastIndex(
-              (m: ChatMessage) => m.role === 'assistant' && (m.status === 'streaming' || m.id === state.streamingMessageId)
-            );
-            if (lastIdx !== -1) {
-              nextAll = [...state.allMessages];
-              nextAll[lastIdx] = {
-                ...nextAll[lastIdx],
-                toolCalls: updateOutput(nextAll[lastIdx].toolCalls),
-              };
-            } else {
-              return {};
-            }
-          }
-
-          const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(
-            nextAll,
-            state.activeBranchMap
-          );
-
-          return {
-            allMessages: nextAll,
-            messages: activeMessages,
-            siblingsMap,
-            activeBranchMap,
-          };
-        });
-      }
-    });
-
-    window.electronAPI.onProcessOutput?.((data: ProcessOutputEvent) => {
-      const { processId, chunk } = data;
-      set((state) => {
-        const existing = state.processes.find((p) => p.id === processId);
-        if (!existing) return {};
-        const updated = state.processes.map((p) => {
-          if (p.id !== processId) return p;
-          const newLogs = [...p.logs, chunk];
-          if (newLogs.length > 2000) newLogs.splice(0, newLogs.length - 2000);
-          return {
-            ...p,
-            logs: newLogs,
-          };
-        });
-        return { processes: updated };
-      });
-    });
-
-    window.electronAPI.onProcessExit?.((data: ProcessExitEvent) => {
-      const { processId, exitCode } = data;
-      set((state) => ({
-        processes: state.processes.map((p) =>
-          p.id === processId
-            ? {
-                ...p,
-                status: 'stopped',
-                exitCode: exitCode ?? undefined,
-                completedAt: Date.now(),
-              }
-            : p
-        ),
-      }));
-    });
   },
 
   selectConversation: async (id: string) => {
@@ -466,12 +325,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(msgs, {});
 
     const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
-    const wp = conv?.workspacePath || null;
     set({
       activeConversationId: id,
       activeConversation: conv,
       isWebBrowsing: conv?.webBrowsingEnabled !== undefined ? Boolean(conv.webBrowsingEnabled) : defaultWeb,
-      workspacePath: wp,
       allMessages: msgs,
       messages: activeMessages,
       siblingsMap,
@@ -479,23 +336,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachments: [],
       isStreaming: false,
       streamingMessageId: null,
-      selectedPreviewFile: null,
     });
-
-    if (wp) {
-      get().loadWorkspaceTree();
-      get().loadGitData();
-      get().loadProcesses();
-    } else {
-      set({ workspaceTree: null, gitStatus: null, gitCommits: [], processes: [], activeProcessId: null });
-    }
 
     if (conv?.providerId) {
       useProviderStore.getState().setActiveProvider(conv.providerId);
     }
   },
 
-  createConversation: async (providerId, modelId, workspacePath) => {
+  createConversation: async (providerId, modelId) => {
     if (!window.electronAPI) return null;
     const provStore = useProviderStore.getState();
     const activeProv = provStore.activeProvider || provStore.providers[0];
@@ -503,7 +351,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const pId = providerId || activeProv?.id || '';
     const mId = modelId || activeProv?.defaultModel || provStore.models[0]?.id || 'default';
     const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
-    const targetWorkspace = workspacePath !== undefined ? workspacePath : (get().workspacePath || undefined);
 
     const newConv: Conversation = {
       id: crypto.randomUUID(),
@@ -511,14 +358,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       providerId: pId,
       modelId: mId,
       webBrowsingEnabled: defaultWeb,
-      workspacePath: targetWorkspace,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     const created = await window.electronAPI.createConversation(newConv);
     const updated = await window.electronAPI.getConversations();
-    set({ conversations: updated, isWebBrowsing: defaultWeb, workspacePath: targetWorkspace || null });
+    set({ conversations: updated, isWebBrowsing: defaultWeb });
     await get().selectConversation(created.id);
     return created;
   },
@@ -556,194 +402,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeBrowserDrawerScreenshot: null,
       activeBrowserDrawerMarkdown: null,
     });
-  },
-
-  setWorkspacePath: async (path: string | null) => {
-    const { activeConversationId } = get();
-    set({ workspacePath: path });
-    if (activeConversationId) {
-      await get().updateConversation({ id: activeConversationId, workspacePath: path || undefined });
-    }
-    if (path) {
-      await get().loadWorkspaceTree();
-      await get().loadGitData();
-      await get().loadProcesses();
-    } else {
-      set({ workspaceTree: null, selectedPreviewFile: null, gitStatus: null, gitCommits: [], processes: [], activeProcessId: null });
-    }
-  },
-
-  selectWorkspaceDialog: async () => {
-    if (!window.electronAPI) return;
-    const path = await window.electronAPI.selectWorkspaceDialog();
-    if (path) {
-      await get().setWorkspacePath(path);
-    }
-  },
-
-  toggleWorkspaceDrawer: () => {
-    set((state) => ({ isWorkspaceDrawerOpen: !state.isWorkspaceDrawerOpen }));
-  },
-
-  loadWorkspaceTree: async () => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) {
-      set({ workspaceTree: null, isLoadingTree: false });
-      return;
-    }
-    set({ isLoadingTree: true });
-    try {
-      const data = await window.electronAPI.getWorkspaceTree(workspacePath);
-      set({ workspaceTree: data, isLoadingTree: false });
-    } catch {
-      set({ workspaceTree: null, isLoadingTree: false });
-    }
-    // Also refresh git status alongside tree
-    get().loadGitData();
-  },
-
-  loadGitData: async () => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) {
-      set({ gitStatus: null, gitCommits: [], isLoadingGit: false });
-      return;
-    }
-    set({ isLoadingGit: true });
-    try {
-      const [status, commits] = await Promise.all([
-        window.electronAPI.gitGetStatus(workspacePath),
-        window.electronAPI.gitGetLog(workspacePath, 20),
-      ]);
-      set({ gitStatus: status, gitCommits: commits || [], isLoadingGit: false });
-    } catch (err) {
-      console.error('Failed to load git data:', err);
-      set({ isLoadingGit: false });
-    }
-  },
-
-  openGitDiff: async (filePath?: string) => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) return;
-    try {
-      const diff = await window.electronAPI.gitGetDiff(workspacePath, filePath);
-      set({ activeGitDiff: { path: filePath, diff } });
-    } catch (err) {
-      console.error('Failed to get diff:', err);
-    }
-  },
-
-  closeGitDiff: () => {
-    set({ activeGitDiff: null });
-  },
-
-  initGitRepo: async () => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) return;
-    try {
-      await window.electronAPI.gitInitRepo(workspacePath);
-      await get().loadGitData();
-    } catch (err) {
-      console.error('Failed to init git repo:', err);
-    }
-  },
-
-  openFilePreview: async (relativePath: string) => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) return;
-    try {
-      const preview = await window.electronAPI.readWorkspaceFile(workspacePath, relativePath);
-      if (preview) {
-        set({ selectedPreviewFile: preview });
-      }
-    } catch (err) {
-      console.error('Failed to preview file:', err);
-    }
-  },
-
-  closeFilePreview: () => {
-    set({ selectedPreviewFile: null });
-  },
-
-  openWorkspaceInExplorer: async () => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) return;
-    await window.electronAPI.openWorkspaceInExplorer(workspacePath);
-  },
-
-  loadProcesses: async () => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI) {
-      set({ processes: [], isLoadingProcesses: false });
-      return;
-    }
-    set({ isLoadingProcesses: true });
-    try {
-      const procs = await window.electronAPI.processList(workspacePath);
-      set((state) => {
-        const activeStillExists = procs.some((p) => p.id === state.activeProcessId);
-        return {
-          processes: procs,
-          activeProcessId: activeStillExists ? state.activeProcessId : procs[0]?.id || null,
-          isLoadingProcesses: false,
-        };
-      });
-    } catch (err) {
-      console.error('Failed to load workspace processes:', err);
-      set({ isLoadingProcesses: false });
-    }
-  },
-
-  startProcess: async (command: string, name?: string) => {
-    const { workspacePath } = get();
-    if (!workspacePath || !window.electronAPI || !command.trim()) return null;
-    try {
-      const item = await window.electronAPI.processStart({
-        workspacePath,
-        command: command.trim(),
-        name: name || command.trim().split(' ')[0],
-      });
-      set((state) => ({
-        processes: [item, ...state.processes.filter((p) => p.id !== item.id)],
-        activeProcessId: item.id,
-      }));
-      return item;
-    } catch (err) {
-      console.error('Failed to start process:', err);
-      return null;
-    }
-  },
-
-  killProcess: async (processId: string) => {
-    if (!window.electronAPI) return false;
-    try {
-      const res = await window.electronAPI.processKill(processId);
-      if (res.success) {
-        set((state) => ({
-          processes: state.processes.map((p) =>
-            p.id === processId ? { ...p, status: 'stopped', completedAt: Date.now() } : p
-          ),
-        }));
-      }
-      return res.success;
-    } catch (err) {
-      console.error('Failed to kill process:', err);
-      return false;
-    }
-  },
-
-  sendProcessInput: async (processId: string, input: string) => {
-    if (!window.electronAPI) return false;
-    try {
-      const res = await window.electronAPI.processSendInput(processId, input);
-      return res.success;
-    } catch (err) {
-      console.error('Failed to send input to process:', err);
-      return false;
-    }
-  },
-
-  selectProcess: (processId: string | null) => {
-    set({ activeProcessId: processId });
   },
 
   updateConversation: async (updates) => {
@@ -895,7 +553,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: tempUserMsg.id,
         parentId,
         webBrowsing: get().isWebBrowsing,
-        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(convId);
@@ -1014,7 +671,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: newForkedUserMsgId,
         parentId,
         webBrowsing: get().isWebBrowsing,
-        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);
@@ -1129,7 +785,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         parentId: parentUserMsg.id,
         isRegeneration: true,
         webBrowsing: get().isWebBrowsing,
-        workspacePath: get().workspacePath || currentConv?.workspacePath || undefined,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);

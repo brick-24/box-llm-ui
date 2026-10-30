@@ -10,8 +10,7 @@ This directory houses all visual presentation and interactive components, organi
 src/renderer/src/components/
 ├── chat/        # Message feed, input composer, attachment chips, code blocks, markdown
 ├── layout/      # Frameless window TitleBar and conversation management Sidebar
-├── settings/    # Application settings modal and dynamic provider configuration forms
-└── workspace/   # Workspace drawer, interactive file tree with search, and line-numbered file preview modal
+└── settings/    # Application settings modal and dynamic provider configuration forms
 ```
 
 ---

@@ -52,13 +52,6 @@ export const IPC_CHANNELS = {
   BROWSER_VIEW_PAGE: 'browser:view-page',
   BROWSER_SEARCH_TEST: 'browser:search-test',
   TOOL_CALL_UPDATE: 'chat:tool-call-update',
-
-  // Workspace & Coding Engine
-  WORKSPACE_SELECT_DIALOG: 'workspace:select-dialog',
-  WORKSPACE_GET_TREE: 'workspace:get-tree',
-  WORKSPACE_READ_FILE: 'workspace:read-file',
-  WORKSPACE_OPEN_EXPLORER: 'workspace:open-explorer',
-  TOOL_COMMAND_OUTPUT: 'chat:tool-command-output',
 };
 ```
 
@@ -81,11 +74,4 @@ export const IPC_CHANNELS = {
     - `BROWSER_VIEW_PAGE`: Uses sandboxed Chromium off-screen window or reader fetcher to extract page text and capture high-res PNG screenshots.
     - `BROWSER_SEARCH_TEST`: Executes diagnostic web searches using configured search providers (DuckDuckGo, Brave, Tavily, Serper).
     - `TOOL_CALL_UPDATE`: Streams real-time tool state changes (`running`, `completed`, `error`) to the renderer.
-  - **Workspace & Coding Sandbox**:
-    - `WORKSPACE_SELECT_DIALOG`: Opens native directory picker dialog for the user to select their project root.
-    - `WORKSPACE_GET_TREE`: Generates a hierarchical file tree ([`WorkspaceTreeNode`](file:///c:/Users/raghav/Desktop/spare/box/src/shared/types.ts)) for the workspace drawer.
-    - `WORKSPACE_READ_FILE`: Safely reads file contents for the file preview modal.
-    - `WORKSPACE_OPEN_EXPLORER`: Reveals the workspace directory in Windows Explorer / macOS Finder / Linux file manager.
-    - `TOOL_COMMAND_OUTPUT`: Pushes live terminal stdout/stderr chunks from spawned child shell processes to the renderer window.
   - **Backup & Restore**: Exports full database state to portable JSON and imports backup snapshots.
-

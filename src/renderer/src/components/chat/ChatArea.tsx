@@ -6,10 +6,6 @@ import {
   ChevronDown,
   Search,
   Sparkles,
-  FolderOpen,
-  Folder,
-  FolderTree,
-  X,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useProviderStore } from '../../store/useProviderStore';
@@ -19,8 +15,6 @@ import { MessageComposer } from './MessageComposer';
 import { WelcomeScreen } from './WelcomeScreen';
 import { AttachmentModal } from './AttachmentModal';
 import { WebBrowserDrawer } from './WebBrowserDrawer';
-import { WorkspaceDrawer } from '../workspace/WorkspaceDrawer';
-import { FilePreviewModal } from '../workspace/FilePreviewModal';
 import {
   resolveModelLimits,
   getModelQuickTokenStops,
@@ -39,11 +33,6 @@ export const ChatArea: React.FC = () => {
     updateConversation,
     sendMessage,
     isStreaming,
-    workspacePath,
-    isWorkspaceDrawerOpen,
-    toggleWorkspaceDrawer,
-    selectWorkspaceDialog,
-    setWorkspacePath,
   } = useChatStore();
 
   const { providers, activeProvider, models, setActiveProvider } = useProviderStore();
@@ -440,47 +429,6 @@ export const ChatArea: React.FC = () => {
             )}
           </div>
 
-          {/* Workspace Button / Badge */}
-          {workspacePath ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/50 border border-border text-xs text-foreground shadow-sm">
-              <Folder className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span
-                className="font-mono text-[11px] font-medium max-w-[120px] sm:max-w-[160px] truncate"
-                title={workspacePath}
-              >
-                {workspacePath.split(/[/\\]/).pop() || workspacePath}
-              </span>
-              <button
-                type="button"
-                onClick={toggleWorkspaceDrawer}
-                className={`p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ${
-                  isWorkspaceDrawerOpen ? 'bg-secondary text-primary font-semibold' : ''
-                }`}
-                title="Toggle Workspace File Tree"
-              >
-                <FolderTree className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkspacePath(null)}
-                className="p-1 rounded text-muted-foreground hover:text-rose-400 hover:bg-secondary transition-colors"
-                title="Disconnect Workspace"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={selectWorkspaceDialog}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary/30 hover:bg-secondary border border-dashed border-border hover:border-border text-xs text-muted-foreground hover:text-foreground transition-all shadow-sm"
-              title="Open a local folder to pair program with autonomous coding tools"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-amber-400/80" />
-              <span className="text-[11px] font-medium hidden sm:inline">Workspace</span>
-            </button>
-          )}
-
           {/* Export Markdown */}
           {activeConversation && (
             <button
@@ -523,12 +471,6 @@ export const ChatArea: React.FC = () => {
 
       {/* Slide-over Web Browser Drawer */}
       <WebBrowserDrawer />
-
-      {/* Slide-over Workspace File Tree Drawer */}
-      <WorkspaceDrawer />
-
-      {/* File Preview Modal */}
-      <FilePreviewModal />
     </div>
   );
 };

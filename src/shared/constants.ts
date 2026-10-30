@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   localPdfOcrFallback: false,
   contextWarningLimit: 200000,
   defaultWebBrowsing: false,
+  defaultEnabledTools: [],
   searchProvider: 'duckduckgo',
   maxSearchResults: 5,
 };

@@ -10,6 +10,15 @@ import {
 } from '../../shared/types';
 import { DEFAULT_SETTINGS } from '../../shared/constants';
 
+function safeParseStringArray(val: any): string[] {
+  try {
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 export class AppDatabase {
   private db: Database | null = null;
   private dbPath: string;
@@ -81,6 +90,7 @@ export class AppDatabase {
         top_p REAL,
         is_pinned INTEGER DEFAULT 0,
         web_browsing_enabled INTEGER DEFAULT 0,
+        enabled_tools_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -120,6 +130,9 @@ export class AppDatabase {
     // Safe incremental migrations for existing databases (run before creating column-dependent indexes)
     try {
       this.db.run(`ALTER TABLE conversations ADD COLUMN web_browsing_enabled INTEGER DEFAULT 0;`);
+    } catch {}
+    try {
+      this.db.run(`ALTER TABLE conversations ADD COLUMN enabled_tools_json TEXT;`);
     } catch {}
     try {
       this.db.run(`ALTER TABLE messages ADD COLUMN parent_id TEXT;`);
@@ -216,7 +229,7 @@ export class AppDatabase {
   public getConversations(): Conversation[] {
     if (!this.db) return [];
     const res = this.db.exec(`
-      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled
+      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled, enabled_tools_json
       FROM conversations
       ORDER BY is_pinned DESC, updated_at DESC
     `);
@@ -234,14 +247,15 @@ export class AppDatabase {
       createdAt: Number(row[9]),
       updatedAt: Number(row[10]),
       webBrowsingEnabled: Boolean(row[11]),
+      enabledTools: row[12] ? safeParseStringArray(row[12]) : (Boolean(row[11]) ? ['browse'] : []),
     }));
   }
 
   public createConversation(conv: Conversation): void {
     if (!this.db) return;
     const stmt = this.db.prepare(`
-      INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, web_browsing_enabled, created_at, updated_at)
-      VALUES ($id, $title, $providerId, $modelId, $systemPrompt, $temperature, $maxTokens, $topP, $isPinned, $webBrowsingEnabled, $createdAt, $updatedAt)
+      INSERT INTO conversations (id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, web_browsing_enabled, enabled_tools_json, created_at, updated_at)
+      VALUES ($id, $title, $providerId, $modelId, $systemPrompt, $temperature, $maxTokens, $topP, $isPinned, $webBrowsingEnabled, $enabledToolsJson, $createdAt, $updatedAt)
     `);
     stmt.run({
       $id: conv.id,
@@ -253,7 +267,8 @@ export class AppDatabase {
       $maxTokens: conv.maxTokens !== undefined ? conv.maxTokens : null,
       $topP: conv.topP !== undefined ? conv.topP : null,
       $isPinned: conv.isPinned ? 1 : 0,
-      $webBrowsingEnabled: conv.webBrowsingEnabled ? 1 : 0,
+      $webBrowsingEnabled: (conv.enabledTools ? conv.enabledTools.includes('browse') : conv.webBrowsingEnabled) ? 1 : 0,
+      $enabledToolsJson: conv.enabledTools ? JSON.stringify(conv.enabledTools) : (conv.webBrowsingEnabled ? JSON.stringify(['browse']) : null),
       $createdAt: conv.createdAt,
       $updatedAt: conv.updatedAt,
     });
@@ -271,6 +286,10 @@ export class AppDatabase {
       updatedAt: conv.updatedAt || Date.now(),
     };
 
+    const isWeb = merged.enabledTools
+      ? merged.enabledTools.includes('browse')
+      : Boolean(merged.webBrowsingEnabled);
+
     const stmt = this.db.prepare(`
       UPDATE conversations SET
         title = $title,
@@ -282,6 +301,7 @@ export class AppDatabase {
         top_p = $topP,
         is_pinned = $isPinned,
         web_browsing_enabled = $webBrowsingEnabled,
+        enabled_tools_json = $enabledToolsJson,
         updated_at = $updatedAt
       WHERE id = $id
     `);
@@ -295,7 +315,8 @@ export class AppDatabase {
       $maxTokens: merged.maxTokens !== undefined ? merged.maxTokens : null,
       $topP: merged.topP !== undefined ? merged.topP : null,
       $isPinned: merged.isPinned ? 1 : 0,
-      $webBrowsingEnabled: merged.webBrowsingEnabled ? 1 : 0,
+      $webBrowsingEnabled: isWeb ? 1 : 0,
+      $enabledToolsJson: merged.enabledTools ? JSON.stringify(merged.enabledTools) : (isWeb ? JSON.stringify(['browse']) : null),
       $updatedAt: merged.updatedAt,
     });
     stmt.free();
@@ -305,7 +326,7 @@ export class AppDatabase {
   public getConversation(id: string): Conversation | null {
     if (!this.db) return null;
     const stmt = this.db.prepare(`
-      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled
+      SELECT id, title, provider_id, model_id, system_prompt, temperature, max_tokens, top_p, is_pinned, created_at, updated_at, web_browsing_enabled, enabled_tools_json
       FROM conversations WHERE id = $id
     `);
     stmt.bind({ $id: id });
@@ -328,6 +349,7 @@ export class AppDatabase {
       createdAt: Number(row[9]),
       updatedAt: Number(row[10]),
       webBrowsingEnabled: Boolean(row[11]),
+      enabledTools: row[12] ? safeParseStringArray(row[12]) : (Boolean(row[11]) ? ['browse'] : []),
     };
   }
 
@@ -349,7 +371,7 @@ export class AppDatabase {
     const cleanQuery = `%${query.trim().toLowerCase()}%`;
 
     const stmt = this.db.prepare(`
-      SELECT DISTINCT c.id, c.title, c.provider_id, c.model_id, c.system_prompt, c.temperature, c.max_tokens, c.top_p, c.is_pinned, c.created_at, c.updated_at, c.web_browsing_enabled
+      SELECT DISTINCT c.id, c.title, c.provider_id, c.model_id, c.system_prompt, c.temperature, c.max_tokens, c.top_p, c.is_pinned, c.created_at, c.updated_at, c.web_browsing_enabled, c.enabled_tools_json
       FROM conversations c
       LEFT JOIN messages m ON m.conversation_id = c.id
       WHERE LOWER(c.title) LIKE $q OR LOWER(m.content) LIKE $q
@@ -372,6 +394,7 @@ export class AppDatabase {
         createdAt: Number(row[9]),
         updatedAt: Number(row[10]),
         webBrowsingEnabled: Boolean(row[11]),
+        enabledTools: row[12] ? safeParseStringArray(row[12]) : (Boolean(row[11]) ? ['browse'] : []),
       });
     }
     stmt.free();

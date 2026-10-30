@@ -11,6 +11,7 @@ import {
 import { useProviderStore } from './useProviderStore';
 import { useSettingsStore } from './useSettingsStore';
 import { buildBranchTree, SiblingInfo } from '../utils/branching';
+import { AVAILABLE_TOOLS } from '@shared/tools';
 
 interface ChatState {
   conversations: Conversation[];
@@ -26,6 +27,7 @@ interface ChatState {
   searchQuery: string;
   selectedAttachmentForModal: MessageAttachment | null;
   isWebBrowsing: boolean;
+  enabledToolIds: string[];
   activeBrowserDrawerUrl: string | null;
   activeBrowserDrawerTitle: string | null;
   activeBrowserDrawerScreenshot: string | null;
@@ -39,6 +41,11 @@ interface ChatState {
   search: (query: string) => Promise<void>;
   toggleWebBrowsing: () => void;
   setWebBrowsing: (enabled: boolean) => void;
+  toggleTool: (toolId: string) => void;
+  setToolEnabled: (toolId: string, enabled: boolean) => void;
+  isToolEnabled: (toolId: string) => boolean;
+  enableAllTools: () => void;
+  disableAllTools: () => void;
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => void;
   closeBrowserDrawer: () => void;
 
@@ -70,6 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   searchQuery: '',
   selectedAttachmentForModal: null,
   isWebBrowsing: false,
+  enabledToolIds: [],
   activeBrowserDrawerUrl: null,
   activeBrowserDrawerTitle: null,
   activeBrowserDrawerScreenshot: null,
@@ -324,11 +332,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const msgs = await window.electronAPI.getMessages(id);
     const { activeMessages, siblingsMap, activeBranchMap } = buildBranchTree(msgs, {});
 
-    const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
+    const settings = useSettingsStore.getState().settings;
+    const defaultTools = settings.defaultEnabledTools ?? (settings.defaultWebBrowsing ? ['browse'] : []);
+    const resolvedTools = conv?.enabledTools !== undefined
+      ? conv.enabledTools
+      : (conv?.webBrowsingEnabled ? ['browse'] : defaultTools);
+    const isWeb = resolvedTools.includes('browse');
+
     set({
       activeConversationId: id,
       activeConversation: conv,
-      isWebBrowsing: conv?.webBrowsingEnabled !== undefined ? Boolean(conv.webBrowsingEnabled) : defaultWeb,
+      enabledToolIds: resolvedTools,
+      isWebBrowsing: isWeb,
       allMessages: msgs,
       messages: activeMessages,
       siblingsMap,
@@ -350,40 +365,110 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const pId = providerId || activeProv?.id || '';
     const mId = modelId || activeProv?.defaultModel || provStore.models[0]?.id || 'default';
-    const defaultWeb = useSettingsStore.getState().settings.defaultWebBrowsing;
+    const settings = useSettingsStore.getState().settings;
+    const defaultTools = settings.defaultEnabledTools ?? (settings.defaultWebBrowsing ? ['browse'] : []);
+    const isWeb = defaultTools.includes('browse');
 
     const newConv: Conversation = {
       id: crypto.randomUUID(),
       title: 'New Conversation',
       providerId: pId,
       modelId: mId,
-      webBrowsingEnabled: defaultWeb,
+      webBrowsingEnabled: isWeb,
+      enabledTools: defaultTools,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
 
     const created = await window.electronAPI.createConversation(newConv);
     const updated = await window.electronAPI.getConversations();
-    set({ conversations: updated, isWebBrowsing: defaultWeb });
+    set({ conversations: updated, enabledToolIds: defaultTools, isWebBrowsing: isWeb });
     await get().selectConversation(created.id);
     return created;
   },
 
-  toggleWebBrowsing: () => {
-    const nextVal = !get().isWebBrowsing;
-    set({ isWebBrowsing: nextVal });
+  toggleTool: (toolId: string) => {
+    const current = get().enabledToolIds;
+    const exists = current.includes(toolId);
+    const next = exists ? current.filter((id) => id !== toolId) : [...current, toolId];
+    const isWeb = next.includes('browse');
+    set({ enabledToolIds: next, isWebBrowsing: isWeb });
     const { activeConversationId } = get();
     if (activeConversationId) {
-      get().updateConversation({ id: activeConversationId, webBrowsingEnabled: nextVal });
+      get().updateConversation({
+        id: activeConversationId,
+        enabledTools: next,
+        webBrowsingEnabled: isWeb,
+      });
     }
   },
 
-  setWebBrowsing: (enabled: boolean) => {
-    set({ isWebBrowsing: enabled });
+  setToolEnabled: (toolId: string, enabled: boolean) => {
+    const current = get().enabledToolIds;
+    const exists = current.includes(toolId);
+    if (enabled && !exists) {
+      const next = [...current, toolId];
+      const isWeb = next.includes('browse');
+      set({ enabledToolIds: next, isWebBrowsing: isWeb });
+      const { activeConversationId } = get();
+      if (activeConversationId) {
+        get().updateConversation({
+          id: activeConversationId,
+          enabledTools: next,
+          webBrowsingEnabled: isWeb,
+        });
+      }
+    } else if (!enabled && exists) {
+      const next = current.filter((id) => id !== toolId);
+      const isWeb = next.includes('browse');
+      set({ enabledToolIds: next, isWebBrowsing: isWeb });
+      const { activeConversationId } = get();
+      if (activeConversationId) {
+        get().updateConversation({
+          id: activeConversationId,
+          enabledTools: next,
+          webBrowsingEnabled: isWeb,
+        });
+      }
+    }
+  },
+
+  isToolEnabled: (toolId: string) => {
+    return get().enabledToolIds.includes(toolId);
+  },
+
+  enableAllTools: () => {
+    const allToolIds = AVAILABLE_TOOLS.map((t) => t.id);
+    const isWeb = allToolIds.includes('browse');
+    set({ enabledToolIds: allToolIds, isWebBrowsing: isWeb });
     const { activeConversationId } = get();
     if (activeConversationId) {
-      get().updateConversation({ id: activeConversationId, webBrowsingEnabled: enabled });
+      get().updateConversation({
+        id: activeConversationId,
+        enabledTools: allToolIds,
+        webBrowsingEnabled: isWeb,
+      });
     }
+  },
+
+  disableAllTools: () => {
+    set({ enabledToolIds: [], isWebBrowsing: false });
+    const { activeConversationId } = get();
+    if (activeConversationId) {
+      get().updateConversation({
+        id: activeConversationId,
+        enabledTools: [],
+        webBrowsingEnabled: false,
+      });
+    }
+  },
+
+  toggleWebBrowsing: () => {
+    get().toggleTool('browse');
+  },
+
+  setWebBrowsing: (enabled: boolean) => {
+    get().setToolEnabled('browse', enabled);
   },
 
   openBrowserDrawer: (url: string, title?: string, screenshot?: string, markdown?: string) => {
@@ -553,6 +638,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: tempUserMsg.id,
         parentId,
         webBrowsing: get().isWebBrowsing,
+        enabledTools: get().enabledToolIds,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(convId);
@@ -671,6 +757,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         userMessageId: newForkedUserMsgId,
         parentId,
         webBrowsing: get().isWebBrowsing,
+        enabledTools: get().enabledToolIds,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);
@@ -785,6 +872,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         parentId: parentUserMsg.id,
         isRegeneration: true,
         webBrowsing: get().isWebBrowsing,
+        enabledTools: get().enabledToolIds,
       });
 
       const dbMsgs = await window.electronAPI.getMessages(activeConversationId);

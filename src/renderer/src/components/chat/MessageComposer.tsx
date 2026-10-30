@@ -6,12 +6,12 @@ import {
   AlertTriangle,
   UploadCloud,
   Loader2,
-  Globe,
 } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { AttachmentChip } from './AttachmentChip';
+import { ToolsMenu } from './ToolsMenu';
 import { resolveModelLimits, formatTokensCompact } from '@shared/model-limits';
 
 export const MessageComposer: React.FC = () => {
@@ -22,8 +22,6 @@ export const MessageComposer: React.FC = () => {
     attachments,
     addAttachment,
     removeAttachment,
-    isWebBrowsing,
-    toggleWebBrowsing,
   } = useChatStore();
 
   const { settings } = useSettingsStore();
@@ -284,25 +282,8 @@ export const MessageComposer: React.FC = () => {
                 <span className="hidden sm:inline">Attach</span>
               </button>
 
-              {/* Web Surfing Toggle */}
-              <button
-                type="button"
-                onClick={toggleWebBrowsing}
-                disabled={isStreaming}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  isWebBrowsing
-                    ? 'bg-blue-600/15 text-blue-400 border border-blue-500/30 shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary border border-transparent'
-                }`}
-                title={isWebBrowsing ? 'Web browsing active (Click to disable)' : 'Enable web browsing & search'}
-                aria-label="Toggle Web Browsing"
-              >
-                <Globe className={`w-3.5 h-3.5 ${isWebBrowsing ? 'text-blue-400' : ''}`} />
-                <span className="hidden sm:inline">Web</span>
-                {isWebBrowsing && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                )}
-              </button>
+              {/* Tools Menu (Web Browsing, File Ops, PDF Generator, etc.) */}
+              <ToolsMenu disabled={isStreaming} />
 
               {totalAttachmentTokens > 0 && (
                 <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded border border-border">

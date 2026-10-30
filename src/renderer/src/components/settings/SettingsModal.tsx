@@ -26,6 +26,7 @@ import { useProviderStore } from '../../store/useProviderStore';
 import { useChatStore } from '../../store/useChatStore';
 import { ProviderForm } from './ProviderForm';
 import { ProviderConfig, DiagnosticLog } from '@shared/types';
+import { AVAILABLE_TOOLS } from '@shared/tools';
 
 export const SettingsModal: React.FC = () => {
   const { isSettingsOpen, closeSettings, activeTab, openSettings, settings, updateSettings } =
@@ -217,7 +218,7 @@ export const SettingsModal: React.FC = () => {
             }`}
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>Web Browsing</span>
+            <span>Web & Tools</span>
           </button>
 
           <button
@@ -603,27 +604,58 @@ export const SettingsModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Default Web Browsing Toggle */}
+              {/* Default Tools Selection */}
               <div>
                 <label className="block mb-1.5 font-semibold text-foreground uppercase tracking-wider">
-                  Default Chat Behavior
+                  Default Enabled Tools on New Chats
                 </label>
-                <label className="flex items-start space-x-3 p-3.5 rounded-xl bg-card border border-border hover:bg-secondary/20 cursor-pointer transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(settings.defaultWebBrowsing)}
-                    onChange={(e) => updateSettings({ defaultWebBrowsing: e.target.checked })}
-                    className="mt-0.5 accent-primary h-4 w-4 rounded"
-                  />
-                  <div>
-                    <span className="font-semibold text-foreground block">
-                      Enable Web Browsing by default on new chats
-                    </span>
-                    <span className="text-[11px] text-muted-foreground block mt-0.5">
-                      When enabled, models with function calling support will have access to search and page reading tools automatically. You can always toggle this on/off per chat using the 🌐 button.
-                    </span>
-                  </div>
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {AVAILABLE_TOOLS.map((tool) => {
+                    const currentDefaults = settings.defaultEnabledTools ?? (settings.defaultWebBrowsing ? ['browse'] : []);
+                    const isChecked = currentDefaults.includes(tool.id);
+
+                    return (
+                      <label
+                        key={tool.id}
+                        className={`flex items-start space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-secondary/40 border-primary/30 shadow-sm'
+                            : 'bg-card border-border hover:bg-secondary/20'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...currentDefaults, tool.id]
+                              : currentDefaults.filter((id) => id !== tool.id);
+                            updateSettings({
+                              defaultEnabledTools: next,
+                              defaultWebBrowsing: next.includes('browse'),
+                            });
+                          }}
+                          className="mt-0.5 accent-primary h-4 w-4 rounded"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-semibold text-foreground text-xs block">
+                              {tool.name}
+                            </span>
+                            {tool.badge && (
+                              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-muted text-muted-foreground uppercase">
+                                {tool.badge}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-muted-foreground block mt-0.5 line-clamp-2">
+                            {tool.description}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Search Engine Provider Selection */}

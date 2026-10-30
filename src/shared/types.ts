@@ -138,6 +138,7 @@ export interface Conversation {
   topP?: number;
   isPinned?: boolean;
   webBrowsingEnabled?: boolean;
+  enabledTools?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -154,6 +155,7 @@ export interface AppSettings {
   contextWarningLimit: number;
   activeProviderId?: string;
   defaultWebBrowsing: boolean;
+  defaultEnabledTools?: string[];
   searchProvider: 'duckduckgo' | 'brave' | 'tavily' | 'serper';
   searchApiKey?: string;
   maxSearchResults: number;

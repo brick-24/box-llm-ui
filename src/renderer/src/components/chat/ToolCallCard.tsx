@@ -3,6 +3,8 @@ import {
   Search,
   Globe,
   FileText,
+  FileCode,
+  Printer,
   Camera,
   ChevronDown,
   ChevronRight,
@@ -11,6 +13,7 @@ import {
   Loader2,
   ExternalLink,
   Eye,
+  Wrench,
 } from 'lucide-react';
 import { ToolCallItem } from '@shared/types';
 import { useChatStore } from '../../store/useChatStore';
@@ -42,8 +45,14 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
         return <Globe className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />;
       case 'take_page_screenshot':
         return <Camera className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />;
+      case 'create_file':
+        return <FileCode className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />;
+      case 'read_file':
+        return <FileText className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />;
+      case 'generate_pdf':
+        return <Printer className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />;
       default:
-        return <Globe className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />;
+        return <Wrench className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />;
     }
   };
 
@@ -71,6 +80,12 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
       }
       case 'take_page_screenshot':
         return `Screenshot: ${item.input?.url ? new URL(item.input.url).hostname : 'Webpage'}`;
+      case 'create_file':
+        return `Create file: ${item.input?.path || 'file'}`;
+      case 'read_file':
+        return `Read file: ${item.input?.path || 'file'}`;
+      case 'generate_pdf':
+        return `PDF: "${item.input?.title || item.input?.filename || 'Document'}"`;
       default:
         return item.name;
     }
@@ -95,6 +110,12 @@ export const ToolCallCard: React.FC<ToolCallCardProps> = ({ toolCalls }) => {
         label = chars > 0 ? `${(chars / 1000).toFixed(1)}k chars` : 'Read';
       } else if (item.name === 'take_page_screenshot') {
         label = 'Captured';
+      } else if (item.name === 'create_file') {
+        label = item.output?.bytesWritten ? `${item.output.bytesWritten} B written` : 'Created';
+      } else if (item.name === 'read_file') {
+        label = item.output?.characterCount ? `${item.output.characterCount} chars` : 'Read';
+      } else if (item.name === 'generate_pdf') {
+        label = item.output?.filename || 'Generated';
       }
 
       return (

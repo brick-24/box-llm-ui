@@ -13,7 +13,8 @@ import {
   WebCitation,
 } from '../../shared/types';
 import { OPENROUTER_CONVERSATIONAL_FREE_MODELS } from '../../shared/model-limits';
-import { WEB_TOOLS, executeWebTool } from '../browser/web-tools';
+import { getToolDeclarationsForIds } from '../../shared/tools';
+import { executeAnyTool } from './tools/tool-dispatcher';
 
 export function isSafetyClassifierVerdict(text: string): boolean {
   if (!text) return false;
@@ -37,6 +38,7 @@ export interface SendMessageOptions {
   parentId?: string | null;
   isRegeneration?: boolean;
   webBrowsing?: boolean;
+  enabledTools?: string[];
 }
 
 export class ChatEngine {
@@ -251,6 +253,13 @@ export class ChatEngine {
       ? options.webBrowsing
       : Boolean(conv.webBrowsingEnabled);
 
+    const enabledToolIds: string[] = options.enabledTools !== undefined
+      ? options.enabledTools
+      : (conv.enabledTools || (isWebBrowsing ? ['browse'] : []));
+
+    const activeTools = getToolDeclarationsForIds(enabledToolIds);
+    const hasActiveTools = activeTools.length > 0;
+
     const executedToolCalls: ToolCallItem[] = [];
     const accumulatedCitations: WebCitation[] = [];
     const settings = this.db.getSettings();
@@ -269,16 +278,16 @@ export class ChatEngine {
       if (controller.signal.aborted) break;
 
       const trajectory: ChatMessage[] = [...history];
-      const maxWebTurns = isWebBrowsing ? 6 : 1;
-      let webTurn = 0;
+      const maxToolTurns = hasActiveTools ? 6 : 1;
+      let toolTurn = 0;
 
-      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (web: ${isWebBrowsing})`, {
+      DiagnosticsService.log('info', 'api', `Initiating request to ${config.name} (${currentModel}) [attempt ${attempt + 1}/${maxRetries + 1}] (tools: ${enabledToolIds.join(',') || 'none'})`, {
         endpoint: config.chatEndpoint,
         protocol: config.protocol,
         model: currentModel,
         messageCount: trajectory.length,
         streaming: config.streamingEnabled,
-        webBrowsing: isWebBrowsing,
+        enabledTools: enabledToolIds,
         messagesPreview: trajectory.slice(-3).map((m) => ({
           role: m.role,
           content: m.content.length > 300 ? `${m.content.slice(0, 300)}...` : m.content,
@@ -286,8 +295,8 @@ export class ChatEngine {
       });
 
       try {
-        while (webTurn < maxWebTurns && !controller.signal.aborted) {
-          webTurn++;
+        while (toolTurn < maxToolTurns && !controller.signal.aborted) {
+          toolTurn++;
           let turnToolCalls: any[] | undefined;
           let turnFullText = '';
           let turnUsage: TokenUsage | undefined;
@@ -305,7 +314,7 @@ export class ChatEngine {
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               {
                 onChunk: (delta, fullText, reasoningDelta, reasoningFullText) => {
@@ -345,7 +354,7 @@ export class ChatEngine {
                 temperature: options.temperature ?? conv.temperature,
                 maxTokens: options.maxTokens ?? conv.maxTokens,
                 topP: options.topP ?? conv.topP,
-                tools: isWebBrowsing ? WEB_TOOLS : undefined,
+                tools: hasActiveTools ? activeTools : undefined,
               },
               controller.signal
             );
@@ -371,7 +380,7 @@ export class ChatEngine {
           if (controller.signal.aborted) break;
 
           // Check if tools were requested
-          if (isWebBrowsing && turnToolCalls && turnToolCalls.length > 0 && webTurn < maxWebTurns) {
+          if (hasActiveTools && turnToolCalls && turnToolCalls.length > 0 && toolTurn < maxToolTurns) {
             const currentTurnItems: ToolCallItem[] = [];
 
             for (const tc of turnToolCalls) {
@@ -402,7 +411,7 @@ export class ChatEngine {
               // Execute tool
               const toolStart = Date.now();
               try {
-                const output = await executeWebTool(item.name, item.input, settings);
+                const output = await executeAnyTool(item.name, item.input, settings);
                 item.durationMs = Date.now() - toolStart;
                 item.output = output.result;
                 item.status = 'completed';

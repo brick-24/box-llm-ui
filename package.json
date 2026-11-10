@@ -31,7 +31,7 @@
   "dependencies": {
     "eventsource-parser": "^3.0.0",
     "katex": "^0.16.21",
-    "lucide-react": "^1.16.0",
+    "lucide-react": "^1.70.0",
     "mammoth": "^1.13.0",
     "pdf-parse": "^2.4.5",
     "react": "^19.0.0",
